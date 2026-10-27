@@ -1,0 +1,2435 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<title>镜头调色 LensKit · 实时滤镜与运镜</title>
+<style>
+:root{
+  --bg:#0b0b0f; --panel:#141419; --line:#26262e;
+  --txt:#e8e8ec; --dim:#9a9aa4; --acc:#f0a03c;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  background:#050507; color:var(--txt); overflow:hidden;
+  font-family:-apple-system,"HarmonyOS Sans SC","MiSans","PingFang SC","Microsoft YaHei",Roboto,sans-serif;
+  touch-action:manipulation;
+}
+#app{
+  height:100dvh; max-width:430px; margin:0 auto;
+  display:flex; flex-direction:column; background:var(--bg);
+  border-left:1px solid #1a1a22; border-right:1px solid #1a1a22;
+}
+/* ---------- 取景/预览区 ---------- */
+#stage{flex:1; min-height:0; position:relative; background:#000; display:flex; align-items:center; justify-content:center;}
+#gl{max-width:100%; max-height:100%; display:block;}
+#cam{position:fixed; left:-9999px; top:0; width:2px; height:2px; opacity:0; pointer-events:none;}
+#homeBtn{
+  position:absolute; z-index:6; top:calc(46px + env(safe-area-inset-top)); left:12px;
+  padding:7px 14px; border-radius:999px; border:1px solid #333;
+  background:rgba(10,10,14,.45); color:#ddd; font-size:13px;
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+}
+#homeBtn{display:none;}
+body:not(.state-landing) #homeBtn{display:block;}
+#homeBtn:active{transform:scale(.95);}
+/* ---------- 顶部工具条 ---------- */
+#toolBar{
+  position:absolute; z-index:8; top:calc(6px + env(safe-area-inset-top)); left:0; right:0;
+  display:none; gap:6px; padding:0 10px; overflow-x:auto; scrollbar-width:none;
+}
+body.state-live #toolBar, body.state-album #toolBar{display:flex;}
+#toolBar::-webkit-scrollbar{display:none;}
+.tool{
+  flex:none; padding:6px 11px; border-radius:999px; border:1px solid #2c2c36;
+  background:rgba(12,12,16,.55); color:#c9c9d2; font-size:11px;
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+}
+.tool.on{background:rgba(240,160,60,.92); color:#17120a; border-color:transparent; font-weight:600;}
+/* 网格 / 水平仪覆盖层 */
+#gridOv{position:absolute; inset:0; z-index:5; display:none; pointer-events:none;}
+#gridOv i{position:absolute; top:0; bottom:0; width:1px; background:rgba(255,255,255,.25);}
+#gridOv i.h{left:0; right:0; top:auto; bottom:auto; width:auto; height:1px;}
+#levelOv{
+  position:absolute; z-index:5; left:50%; top:60%; transform:translateX(-50%);
+  display:none; pointer-events:none; width:70%; max-width:300px;
+}
+#levelOv .rail{position:relative; height:2px; background:rgba(255,255,255,.3); border-radius:2px;}
+#levelOv .bubble{
+  position:absolute; top:-6px; left:50%; margin-left:-7px; width:14px; height:14px;
+  border-radius:50%; background:#fff; transition:transform .08s linear, background .15s;
+}
+#levelOv .bubble.ok{background:#3ddc84;}
+/* 构图提示覆盖层 */
+#compOv{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  max-width:100%; max-height:100%; display:none; pointer-events:none; z-index:4;
+}
+#compTip{
+  position:absolute; left:50%; transform:translateX(-50%);
+  bottom:calc(72px + env(safe-area-inset-bottom)); z-index:6; display:none;
+  background:rgba(10,10,14,.62); border:1px solid #333; color:#eee;
+  padding:6px 13px; border-radius:999px; font-size:12px; white-space:nowrap;
+  pointer-events:none; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+}
+/* 录制指示 */
+#recBadge{
+  position:absolute; top:calc(46px + env(safe-area-inset-top)); right:12px; z-index:7;
+  display:none; align-items:center; gap:6px;
+  background:rgba(0,0,0,.55); border:1px solid rgba(255,82,82,.45);
+  color:#ff5c5c; padding:6px 12px; border-radius:999px; font-size:12px; letter-spacing:1px;
+}
+#recBadge .dot{width:8px; height:8px; border-radius:50%; background:#ff5c5c; animation:blink 1s infinite;}
+@keyframes blink{50%{opacity:.15;}}
+#prog{position:absolute; top:0; left:0; height:3px; width:0%; background:var(--acc); z-index:7; display:none;}
+#moveBadge{
+  position:absolute; bottom:12px; right:12px; z-index:6; display:none;
+  background:rgba(0,0,0,.5); border:1px solid #333; color:#ddd;
+  padding:5px 11px; border-radius:999px; font-size:11px;
+}
+/* ---------- 首页 ---------- */
+#landing{
+  position:absolute; inset:0; z-index:5;
+  background:radial-gradient(120% 90% at 50% 0%, #1b1b26 0%, #0b0b0f 72%);
+  display:none; flex-direction:column; align-items:center; justify-content:center;
+  gap:13px; text-align:center; padding:24px;
+}
+body.state-landing #landing{display:flex;}
+#landing h1{font-size:30px; font-weight:600; letter-spacing:8px; margin:6px 0 0; text-indent:8px;}
+#landing .sub{color:var(--dim); font-size:13px; line-height:1.8; margin:0;}
+#landing .tag{
+  display:inline-block; margin-top:8px; padding:4px 12px; border-radius:999px;
+  border:1px solid #3a3226; color:var(--acc); font-size:12px; letter-spacing:1px;
+}
+.big{
+  width:230px; padding:13px 0; border-radius:999px; font-size:15px;
+  touch-action:manipulation; margin-top:6px;
+}
+.big.primary{background:var(--acc); color:#17120a; border:none; font-weight:600;}
+.big.ghost{background:transparent; border:1px solid #3a3a44; color:var(--txt);}
+.big:active{transform:scale(.97);}
+#landing .foot{margin-top:14px; font-size:11px; color:#666; line-height:1.8;}
+/* ---------- 调色面板 ---------- */
+#panel{display:none; background:var(--panel); border-top:1px solid var(--line);}
+body:not(.state-landing) #panel{display:block;}
+#tabs{display:flex; gap:6px; padding:9px 12px 0;}
+.tab{padding:7px 14px; border-radius:999px; background:transparent; color:var(--dim); border:none; font-size:13px;}
+.tab.on{background:#23232c; color:var(--txt);}
+#presetWrap,#sliderWrap,#moveWrap,#proWrap{height:158px; overflow-y:auto; overscroll-behavior:contain;}
+#presetWrap{display:flex; gap:12px; padding:13px 14px; overflow-x:auto;}
+.chip{
+  flex:none; width:62px; background:transparent; border:none; padding:0;
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+}
+.chip .sw{
+  width:48px; height:48px; border-radius:12px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.09);
+}
+.chip.on .sw{outline:2px solid var(--acc); outline-offset:2px;}
+.chip .cn{font-size:11px; color:var(--dim); white-space:nowrap;}
+.chip.on .cn{color:var(--txt);}
+#sliderWrap{display:none; padding:8px 18px 12px;}
+#proWrap{display:none; padding:8px 18px 12px;}
+.sec-h{font-size:11px; color:#6f6f7a; letter-spacing:2px; margin:12px 0 6px;}
+.grid{display:grid; grid-template-columns:1fr 1fr; column-gap:18px;}
+.sl{margin:0 0 9px;}
+.sl-h{display:flex; justify-content:space-between; font-size:12px; color:var(--dim); margin-bottom:4px;}
+.sl-h b{color:var(--txt); font-weight:500; font-variant-numeric:tabular-nums; min-width:36px; text-align:right;}
+input[type=range]{
+  -webkit-appearance:none; appearance:none; width:100%; height:20px;
+  background:transparent; margin:0;
+}
+input[type=range]::-webkit-slider-runnable-track{height:4px; border-radius:2px; background:#2c2c36;}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; width:17px; height:17px; border-radius:50%;
+  background:var(--acc); margin-top:-6.5px; border:none; box-shadow:0 1px 4px rgba(0,0,0,.5);
+}
+input[type=range]::-moz-range-track{height:4px; border-radius:2px; background:#2c2c36;}
+input[type=range]::-moz-range-thumb{width:17px; height:17px; border-radius:50%; background:var(--acc); border:none;}
+/* 专业页 */
+.chip-row{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:2px 0 10px;}
+.pchip{padding:5px 12px; border-radius:999px; border:1px solid #2c2c36; background:transparent; color:var(--dim); font-size:11px;}
+.pchip.on{border-color:var(--acc); color:var(--acc);}
+.pro-btn{
+  width:100%; margin:2px 0 12px; padding:9px 0; border-radius:999px; border:1px solid #2c2c36;
+  background:#1a1a22; color:var(--txt); font-size:13px;
+}
+.pro-btn.on{background:var(--acc); color:#17120a; border-color:var(--acc); font-weight:600;}
+.pro-hint{font-size:11px; color:#6f6f7a; line-height:1.7; margin:8px 0;}
+/* ---------- 运镜面板 ---------- */
+#moveWrap{display:none; padding:11px 14px;}
+.move-strip{display:flex; gap:8px; overflow-x:auto; padding-bottom:2px;}
+.mchip{
+  flex:none; padding:8px 13px; border-radius:999px;
+  border:1px solid #2c2c36; background:#1a1a22; color:var(--dim); font-size:12px;
+}
+.mchip.on{background:var(--acc); color:#17120a; border-color:var(--acc); font-weight:600;}
+.mchip.schip{border-color:#5a4326; color:var(--acc);}
+#sceneStrip{
+  display:flex; gap:8px; padding:10px 14px 0; overflow-x:auto; scrollbar-width:none;
+}
+#sceneStrip::-webkit-scrollbar{display:none;}
+.scene{
+  flex:none; padding:7px 13px; border-radius:999px; border:1px solid #2c2c36;
+  background:#1a1a22; color:var(--dim); font-size:12px;
+}
+.scene.on{background:var(--acc); color:#17120a; border-color:var(--acc); font-weight:600;}
+.move-row{display:flex; align-items:center; gap:8px; margin-top:11px;}
+.move-row .lbl{font-size:11px; color:#6f6f7a;}
+.dchip{padding:5px 11px; border-radius:999px; border:1px solid #2c2c36; background:transparent; color:var(--dim); font-size:11px;}
+.dchip.on{border-color:var(--acc); color:var(--acc);}
+.move-hint{font-size:11px; color:#6f6f7a; margin-top:9px; line-height:1.6;}
+.move-act{
+  width:100%; margin-top:9px; padding:10px 0; border-radius:999px; border:none;
+  background:var(--acc); color:#17120a; font-weight:600; font-size:14px;
+}
+.move-act:active{transform:scale(.98);}
+/* ---------- 底部操作条 ---------- */
+.bar{
+  display:none; align-items:center; justify-content:center; gap:16px;
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  background:#0e0e13;
+}
+body.state-live #barLive{display:flex;}
+body.state-frozen #barFrozen{display:flex;}
+body.state-album #barAlbum{display:flex;}
+.act{
+  padding:10px 18px; border-radius:999px; background:#1d1d26; color:var(--txt);
+  border:1px solid #2c2c36; font-size:14px; touch-action:manipulation;
+}
+.act.primary{background:var(--acc); color:#17120a; border-color:var(--acc); font-weight:600; padding:10px 26px;}
+.act:active{transform:scale(.95);}
+#shutter{
+  width:66px; height:66px; border-radius:50%; border:3px solid #fff; background:transparent;
+  display:flex; align-items:center; justify-content:center; touch-action:manipulation;
+}
+#shutter span{width:50px; height:50px; border-radius:50%; background:#fff; transition:transform .08s, background .15s;}
+#shutter:active span{transform:scale(.86);}
+body.recording #shutter{border-color:#ff5c5c;}
+body.recording #shutter span{background:#ff5c5c;}
+body.cam-video #shutter{border-color:#ff8a8a;}
+body.cam-video #shutter span{background:#ff5c5c;}
+body.cam-video.recording #shutter span{width:26px; height:26px; border-radius:6px;}
+#modeSeg{display:flex; gap:6px;}
+.seg{padding:8px 12px; border-radius:999px; border:1px solid #2c2c36; background:#1d1d26; color:var(--dim); font-size:12px;}
+.seg.on{background:var(--acc); color:#17120a; border-color:var(--acc); font-weight:600;}
+#recBadge b{font-variant-numeric:tabular-nums; font-weight:600; margin-left:2px;}
+#barLive{gap:10px;}
+/* ---------- 提示 ---------- */
+#toast{
+  position:fixed; left:50%; bottom:calc(215px + env(safe-area-inset-bottom));
+  transform:translateX(-50%) translateY(8px);
+  background:rgba(22,22,28,.94); color:#eee; padding:9px 16px; border-radius:999px;
+  font-size:13px; opacity:0; transition:.25s; pointer-events:none; z-index:50; max-width:80vw;
+}
+#toast.on{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body class="state-landing">
+<div id="app">
+  <main id="stage">
+    <canvas id="gl" width="4" height="3"></canvas>
+    <div id="prog"></div>
+    <div id="recBadge"><span class="dot"></span>REC<b id="recTime"></b></div>
+    <div id="moveBadge"></div>
+    <div id="toolBar"></div>
+    <div id="gridOv">
+      <i style="left:33.33%"></i><i style="left:66.66%"></i>
+      <i class="h" style="top:33.33%"></i><i class="h" style="top:66.66%"></i>
+    </div>
+    <div id="levelOv"><div class="rail"><div class="bubble" id="levelBubble"></div></div></div>
+    <canvas id="compOv"></canvas>
+    <div id="compTip"></div>
+    <button id="homeBtn">‹ 首页</button>
+    <div id="landing">
+      <svg viewBox="0 0 72 72" width="76" height="76" aria-hidden="true">
+        <circle cx="36" cy="36" r="27" fill="none" stroke="#f0a03c" stroke-width="3"/>
+        <g stroke="#f0a03c" stroke-width="2.4" stroke-linecap="round">
+          <line x1="63" y1="36" x2="15.3" y2="53.4"/>
+          <line x1="49.5" y1="59.4" x2="10.6" y2="26.8"/>
+          <line x1="22.5" y1="59.4" x2="31.3" y2="9.4"/>
+          <line x1="9" y1="36" x2="56.7" y2="18.6"/>
+          <line x1="22.5" y1="12.6" x2="61.4" y2="45.2"/>
+          <line x1="49.5" y1="12.6" x2="40.7" y2="62.6"/>
+        </g>
+      </svg>
+      <h1>镜头调色</h1>
+      <p class="sub">一键出片 · AI 智能场景 · 运镜模板 · 直接录像<br>实时滤镜 · 光轨 · 专业参数 · 延时 · 连拍 · 定时<br>构图提示 · 网格 · 水平仪 · 水印<br>适配小米17 Max / 主流安卓与 iPhone</p>
+      <span class="tag">即开即用 · v1.7</span>
+      <button id="btnCam" class="big primary">打开取景器</button>
+      <button id="btnAlbum" class="big ghost">从相册选择照片</button>
+      <p class="foot">纯本地处理 · 照片不上传<br>建议用系统浏览器打开，菜单里「添加到主屏幕」可当 App 用</p>
+    </div>
+  </main>
+
+  <section id="panel">
+    <div id="tabs">
+      <button class="tab on" id="tabPreset">滤镜</button>
+      <button class="tab" id="tabSlider">调节</button>
+      <button class="tab" id="tabMove">运镜</button>
+      <button class="tab" id="tabPro">专业</button>
+    </div>
+    <div id="sceneStrip"></div>
+    <div id="presetWrap"></div>
+    <div id="sliderWrap"></div>
+    <div id="moveWrap"></div>
+    <div id="proWrap"></div>
+  </section>
+
+  <footer>
+    <div id="barLive" class="bar">
+      <button class="act" id="toAlbum">相册</button>
+      <div id="modeSeg">
+        <button class="seg on" id="segPhoto">照片</button>
+        <button class="seg" id="segVideo">视频</button>
+      </div>
+      <button id="shutter" aria-label="拍摄"><span></span></button>
+      <button class="act" id="flip">翻转</button>
+    </div>
+    <div id="barFrozen" class="bar">
+      <button class="act" id="retake">重拍</button>
+      <button class="act compare">对比</button>
+      <button class="act primary save">保存</button>
+    </div>
+    <div id="barAlbum" class="bar">
+      <button class="act" id="pick">换一张</button>
+      <button class="act reset">重置</button>
+      <button class="act compare">对比</button>
+      <button class="act primary save">保存</button>
+    </div>
+  </footer>
+</div>
+
+<video id="cam" playsinline muted autoplay></video>
+<input type="file" id="file" accept="image/*" hidden>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ============================================================
+   镜头调色 LensKit v1.3 —— 单文件 · 网页/安卓共用
+   WebGL 实时调色 + 运镜引擎 · 取景/相册 · 纯本地处理
+   v1.2 新增：专业参数 / 光轨 / 延时 / 连拍 / 定时 / 网格
+             水平仪 / 画幅 / 水印 / 收音 / 自定义预设 / 磨皮
+   v1.3 新增：照片/视频双模式 · 快门直接录像（带时长显示）
+   v1.4 新增：视频模式套用运镜模板（全程往返循环）
+   v1.5 新增：一键出片模板（滤镜+运镜预设组合）/ 时长档加长 / 新运镜样式
+   v1.6 新增：AI 智能场景（本地画面分析识别场景）+ 按场景动态微调模板
+   v1.7 新增：构图提示（本地分析主体位置/地平线/倾斜角 → 三分交点引导 + 评分）
+   ============================================================ */
+var $ = function(s){ return document.querySelector(s); };
+
+/* ---------- 预设 ---------- */
+var NEUTRAL = {
+  mix:1, exposure:0, contrast:0, saturation:0, temperature:0, tint:0,
+  highlights:0, shadows:0, curve:0, fade:0, grain:0, vignette:0, sharpen:0, bw:0,
+  smooth:0,
+  splitShA:0, splitHiA:0, splitSh:[.5,.5,.5], splitHi:[.5,.5,.5]
+};
+function P(o){
+  var s = Object.assign({}, NEUTRAL, o);
+  s.splitSh = (o.splitSh ? o.splitSh : [.5,.5,.5]).slice();
+  s.splitHi = (o.splitHi ? o.splitHi : [.5,.5,.5]).slice();
+  return s;
+}
+var PRESETS = [
+  { name:'原图', css:'linear-gradient(135deg,#c9c9c9,#f2f2f2)', p:P({}) },
+  { name:'胶片 Gold', css:'linear-gradient(135deg,#c9a36a,#e8d9b0 55%,#7a8fa0)',
+    p:P({exposure:.04,contrast:.1,saturation:-.02,temperature:.14,tint:.02,curve:.45,fade:.28,
+         grain:.16,vignette:.18,sharpen:.1,splitShA:.22,splitHiA:.28,splitHi:[1,.93,.8],splitSh:[.5,.58,.72]}) },
+  { name:'富士 NC', css:'linear-gradient(135deg,#9fb98a,#e6e2c8 60%,#5e7d7a)',
+    p:P({exposure:.02,contrast:.06,saturation:.04,temperature:.04,tint:-.05,curve:.55,fade:.2,
+         grain:.1,vignette:.12,splitShA:.3,splitHiA:.2,splitHi:[1,.96,.86],splitSh:[.46,.6,.52]}) },
+  { name:'日系通透', css:'linear-gradient(135deg,#bfe0ea,#f2f0e4 60%,#cdd8e0)',
+    p:P({exposure:.16,contrast:-.04,saturation:-.12,temperature:-.1,tint:-.02,highlights:-.08,shadows:.22,
+         curve:.15,fade:.3,grain:.07,vignette:.05,splitHiA:.15,splitHi:[1,1,.98]}) },
+  { name:'港风 90s', css:'linear-gradient(135deg,#8f5a3a,#e0b25e 55%,#4a3b52)',
+    p:P({exposure:-.02,contrast:.16,saturation:.08,temperature:.16,tint:.08,curve:.35,fade:.38,
+         grain:.22,vignette:.28,splitShA:.28,splitHiA:.3,splitHi:[1,.88,.7],splitSh:[.6,.5,.62]}) },
+  { name:'德味蓝调', css:'linear-gradient(135deg,#3a5a8c,#c9d6e8 55%,#8a6a3a)',
+    p:P({contrast:.22,saturation:.16,temperature:-.08,curve:.4,shadows:-.08,highlights:-.06,fade:.1,
+         grain:.08,vignette:.22,splitShA:.22,splitHiA:.2,splitHi:[.8,.88,1],splitSh:[1,.85,.6]}) },
+  { name:'黑金城市', css:'linear-gradient(135deg,#1a1a22,#3a3020 55%,#d8a84a)',
+    p:P({contrast:.26,saturation:-.42,temperature:.06,curve:.35,highlights:-.12,shadows:-.04,fade:.12,
+         vignette:.3,grain:.1,splitShA:.5,splitHiA:.55,splitHi:[1,.72,.28],splitSh:[.22,.26,.4]}) },
+  { name:'赛博夜色', css:'linear-gradient(135deg,#2a1a5e,#8a2ad8 55%,#2ad8d8)',
+    p:P({contrast:.2,saturation:.28,temperature:-.22,curve:.5,fade:.1,grain:.1,vignette:.32,
+         splitShA:.5,splitHiA:.35,splitHi:[.2,.9,.9],splitSh:[.35,.2,.85]}) },
+  { name:'莫兰迪', css:'linear-gradient(135deg,#a89f98,#d6cfc6 60%,#8f9a94)',
+    p:P({contrast:-.06,saturation:-.35,temperature:-.03,tint:.02,shadows:.15,fade:.35,grain:.06,
+         vignette:.05,curve:.2,splitHiA:.18,splitHi:[.97,.95,.9]}) },
+  { name:'黑白', css:'linear-gradient(135deg,#111,#eee)',
+    p:P({bw:1,contrast:.18,curve:.5,grain:.18,vignette:.25,sharpen:.15,fade:.05}) }
+];
+
+var SLIDERS = [
+  {k:'mix',        n:'滤镜强度', min:0, max:1},
+  {k:'exposure',   n:'曝光',     min:-1, max:1},
+  {k:'contrast',   n:'对比度',   min:-1, max:1},
+  {k:'saturation', n:'饱和度',   min:-1, max:1},
+  {k:'temperature',n:'色温',     min:-1, max:1},
+  {k:'tint',       n:'色调',     min:-1, max:1},
+  {k:'highlights', n:'高光',     min:-1, max:1},
+  {k:'shadows',    n:'阴影',     min:-1, max:1},
+  {k:'curve',      n:'胶片感',   min:0, max:1},
+  {k:'fade',       n:'褪色',     min:0, max:1},
+  {k:'grain',      n:'颗粒',     min:0, max:1},
+  {k:'vignette',   n:'暗角',     min:0, max:1},
+  {k:'bw',         n:'黑白',     min:0, max:1},
+  {k:'sharpen',    n:'锐化',     min:0, max:1},
+  {k:'smooth',     n:'磨皮',     min:0, max:1}
+];
+var SLIDER_GROUPS = [
+  {name:'色彩基调', items:['exposure','contrast','saturation','highlights','shadows']},
+  {name:'色彩倾向', items:['temperature','tint','bw']},
+  {name:'胶片质感', items:['curve','fade','grain','vignette','sharpen','smooth']}
+];
+
+/* ---------- 运镜模板 ----------
+   f(e) : e ∈ [0,1] → {s:缩放, x/y:偏移(uv), r:旋转(弧度)} */
+var MOVES = [
+  { id:'none',  name:'固定' },
+  { id:'push',  name:'推近',     f:function(e){ return {s:1+0.24*e, x:0, y:0, r:0}; } },
+  { id:'pull',  name:'拉远',     f:function(e){ return {s:1.26-0.24*e, x:0, y:0, r:0}; } },
+  { id:'panR',  name:'右移',     f:function(e){ return {s:1.16, x:0.055-0.11*e, y:0, r:0}; } },
+  { id:'panL',  name:'左移',     f:function(e){ return {s:1.16, x:-0.055+0.11*e, y:0, r:0}; } },
+  { id:'rise',  name:'上升',     f:function(e){ return {s:1.16, x:0, y:-0.055+0.11*e, r:0}; } },
+  { id:'dolly', name:'旋转推近', f:function(e){ return {s:1+0.2*e, x:0, y:0, r:-0.035*(1-e)}; } },
+  { id:'orbit', name:'环绕',     f:function(e){ var a=e*Math.PI*2; return {s:1.18, x:0.05*Math.cos(a), y:0.022*Math.sin(a), r:0}; } },
+  { id:'sway',  name:'摇摆',     f:function(e){ var a=e*Math.PI*2; return {s:1.15, x:0.045*Math.sin(a), y:0.018*Math.sin(2*a), r:0}; } },
+  { id:'hand',  name:'手持感',   f:function(e){ var t=e*4;
+      return {s:1.07,
+        x:0.008*Math.sin(t*6.1)+0.005*Math.sin(t*11.3+1.7),
+        y:0.006*Math.sin(t*7.9+0.6)+0.004*Math.sin(t*13.7),
+        r:0.0035*Math.sin(t*5.3+2.1)}; } },
+  { id:'sink',  name:'下降',     f:function(e){ return {s:1.16, x:0, y:0.055-0.11*e, r:0}; } },
+  { id:'roll',  name:'旋转',     f:function(e){ return {s:1.18, x:0, y:0, r:0.06-0.12*e}; } },
+  { id:'whip',  name:'甩镜',     f:function(e){ return {s:1.25, x:0.09*Math.sin(e*Math.PI), y:0, r:0}; } },
+  { id:'vertigo', name:'希区柯克', f:function(e){ var e2=1-Math.pow(1-e,2);
+      return {s:1+0.32*e2, x:0, y:0, r:0.03*e2}; } },
+  { id:'pulse', name:'脉冲',     f:function(e){ return {s:1.05+0.05*Math.sin(e*Math.PI*4), x:0, y:0, r:0}; } },
+  { id:'float', name:'漂浮',     f:function(e){ var a=e*Math.PI*2;
+      return {s:1.12, x:0.03*Math.sin(a), y:0.02*Math.sin(a+1), r:0.008*Math.sin(a)}; } }
+];
+var DURS = [3,5,8,10,15];
+
+/* ---------- 一键出片模板：滤镜 + 运镜序列，选好直接录 ----------
+   seq: [运镜序号, 秒] 依次执行；filter: 自动套用的滤镜序号 */
+var SEQS = [
+  { name:'慢推空镜', dur:15, filter:3, seq:[[1,8],[2,7]] },
+  { name:'港风卡点', dur:12, filter:4, seq:[[1,4],[12,4],[8,4]] },
+  { name:'电影环绕', dur:15, filter:6, seq:[[7,8],[1,4],[2,3]] },
+  { name:'希区柯克', dur:8,  filter:7, seq:[[13,8]] },
+  { name:'手持Vlog', dur:20, filter:2, seq:[[9,20]] },
+  { name:'城市脉冲', dur:10, filter:6, seq:[[14,10]] }
+];
+
+/* ---------- AI 智能场景：本地画面分析 + 按场景动态微调（纯本地，不联网） ---------- */
+var SCENES = [
+  {id:'auto',      name:'AI 自动'},
+  {id:'night',     name:'夜景', pack:{exposure:.22, shadows:.28, highlights:-.12, temperature:-.06, contrast:.06, vignette:.12}, tip:'慢推空镜'},
+  {id:'food',      name:'美食', pack:{temperature:.12, saturation:.18, contrast:.06, curve:.1, vignette:.15}, tip:'城市脉冲'},
+  {id:'portrait',  name:'人像', pack:{smooth:.45, contrast:-.05, temperature:.05, fade:.08, shadows:.12}, tip:'手持Vlog'},
+  {id:'landscape', name:'风景', pack:{saturation:.22, contrast:.1, sharpen:.25, highlights:-.08, temperature:-.03}, tip:'电影环绕'},
+  {id:'backlight', name:'逆光', pack:{highlights:-.3, shadows:.35, exposure:.08, contrast:-.05}, tip:'慢推空镜'},
+  {id:'snow',      name:'雪景', pack:{exposure:-.05, temperature:-.08, saturation:.12, highlights:-.15}, tip:'手持Vlog'},
+  {id:'general',   name:'通用优化', pack:{}}
+];
+var ZERO1 = {mix:1, curve:1, fade:1, grain:1, vignette:1, sharpen:1, smooth:1, bw:1};
+var curScene = '';
+var anaC = null;
+
+function analyzeFrame(){
+  var src = null;
+  if(mode === 'live' && !frozen && video.videoWidth) src = video;
+  else if(frozen && captured) src = captured;
+  else if(mode === 'album' && bitmap) src = bitmap;
+  if(!src) return null;
+  if(!anaC){
+    anaC = document.createElement('canvas');
+    anaC.width = 64; anaC.height = 48;
+  }
+  var cx = anaC.getContext('2d');
+  try{ cx.drawImage(src, 0, 0, 64, 48); }catch(e){ return null; }
+  var d;
+  try{ d = cx.getImageData(0, 0, 64, 48).data; }catch(e){ return null; }
+  var n = 64 * 48;
+  var st = {L:0, p10:0, p90:0, r:0, g:0, b:0, S:0, skin:0, green:0, sky:0, dark:0, bright:0};
+  var lums = [];
+  var i, r, g, b, L, mx, mn;
+  for(i = 0; i < n; i++){
+    r = d[i*4] / 255; g = d[i*4+1] / 255; b = d[i*4+2] / 255;
+    L = 0.2126*r + 0.7152*g + 0.0722*b;
+    lums.push(L);
+    st.L += L; st.r += r; st.g += g; st.b += b;
+    mx = Math.max(r, g, b); mn = Math.min(r, g, b);
+    st.S += mx > 0.02 ? (mx - mn) / mx : 0;
+    if(L < 0.16) st.dark++;
+    if(L > 0.85) st.bright++;
+    if(r > g && g > b && r - b > 0.08 && L > 0.2 && L < 0.92) st.skin++;
+    if(g > r + 0.05 && g > b + 0.05) st.green++;
+    if(b > r + 0.06 && b > 0.3 && L > 0.35) st.sky++;
+  }
+  st.L /= n; st.r /= n; st.g /= n; st.b /= n; st.S /= n;
+  st.skin /= n; st.green /= n; st.sky /= n; st.dark /= n; st.bright /= n;
+  lums.sort(function(a, b2){ return a - b2; });
+  st.p10 = lums[Math.floor(n * 0.1)];
+  st.p90 = lums[Math.floor(n * 0.9)];
+  return st;
+}
+function classifyScene(st){
+  var scores = [
+    {id:'night',     s: st.dark * 1.8 + (0.32 - st.L) * 2.2},
+    {id:'backlight', s: (st.p90 - st.p10 > 0.5 ? (st.p90 - st.p10) * 1.4 : 0) + st.bright * 1.2},
+    {id:'portrait',  s: st.skin * 3.4 - Math.abs(st.L - 0.5) * 0.6},
+    {id:'food',      s: st.S * 1.4 + (st.r - st.b > 0.06 ? 0.4 : 0) - st.sky * 2},
+    {id:'landscape', s: (st.green + st.sky) * 2.2},
+    {id:'snow',      s: st.bright * 2.2 + (0.24 - st.S) * 1.6 - st.dark * 2}
+  ];
+  scores.sort(function(a, b2){ return b2.s - a.s; });
+  return scores[0].s < 0.3 ? 'general' : scores[0].id;
+}
+function applyDeltas(d){
+  Object.keys(d).forEach(function(k){
+    if(k === 'smooth' && d[k] > 0){ state[k] = Math.max(state[k] || 0, d[k]); return; }
+    var v = (state[k] || 0) + d[k];
+    state[k] = ZERO1[k] ? Math.max(0, Math.min(1, v)) : Math.max(-1, Math.min(1, v));
+  });
+}
+function tweakByStats(st, sc){
+  var d = {}, notes = [];
+  if(st.L < 0.32){ d.exposure = 0.12; notes.push('提亮'); }
+  else if(st.L > 0.72){ d.exposure = -0.1; notes.push('控高光'); }
+  if(st.r - st.b > 0.09){ d.temperature = -0.08; notes.push('去暖偏'); }
+  else if(st.b - st.r > 0.09){ d.temperature = 0.08; notes.push('去冷偏'); }
+  if(st.p90 - st.p10 < 0.42){ d.contrast = 0.1; notes.push('加对比'); }
+  if(st.S < 0.24 && sc.id !== 'snow'){ d.saturation = 0.12; notes.push('提饱和'); }
+  if(Object.keys(d).length){
+    applyDeltas(d);
+    return '微调 ' + notes.join('·');
+  }
+  return '';
+}
+function applyScene(id){
+  var sc = null;
+  for(var i = 0; i < SCENES.length; i++){ if(SCENES[i].id === id) sc = SCENES[i]; }
+  if(!sc) return;
+  var st = analyzeFrame();
+  if(id === 'auto' && !st){ toast('先取景或选一张照片，AI 才能分析画面'); return; }
+  var msg;
+  if(id === 'auto'){
+    var cid = classifyScene(st);
+    for(var j = 0; j < SCENES.length; j++){ if(SCENES[j].id === cid) sc = SCENES[j]; }
+    curScene = cid;
+    msg = 'AI 识别「' + sc.name + '」';
+  }else{
+    curScene = id;
+    msg = sc.name + '模式';
+  }
+  if(sc.pack) applyDeltas(sc.pack);
+  var t = st ? tweakByStats(st, sc) : '';
+  curPreset = -2;
+  clearChipActive();
+  var chs = document.querySelectorAll('.scene');
+  for(var k = 0; k < chs.length; k++) chs[k].classList.toggle('on', chs[k].getAttribute('data-id') === curScene);
+  syncSliders();
+  if((mode === 'album' && bitmap) || frozen) renderFrame();
+  toast(msg + (t ? ' · ' + t : '') + (sc.tip ? '，可试一键「' + sc.tip + '」' : ''));
+}
+function buildScenes(){
+  var wrap = $('#sceneStrip');
+  SCENES.forEach(function(sc){
+    var b = document.createElement('button');
+    b.className = 'scene';
+    b.setAttribute('data-id', sc.id);
+    b.textContent = sc.name;
+    b.addEventListener('click', function(){ applyScene(sc.id); });
+    wrap.appendChild(b);
+  });
+}
+
+/* ---------- 构图提示（本地分析：主体位置 / 地平线 / 倾斜角 → 三分引导 + 评分） ---------- */
+var compLast = 0;
+function analyzeComposition(){
+  var src = null;
+  if(mode === 'live' && !frozen && stream && video.videoWidth) src = video;
+  else if(frozen && captured) src = captured;
+  else if(mode === 'album' && bitmap) src = bitmap;
+  if(!src) return null;
+  if(!compC){ compC = document.createElement('canvas'); compC.width = 120; compC.height = 90; }
+  var cx = compC.getContext('2d');
+  try{ cx.drawImage(src, 0, 0, 120, 90); }catch(e){ return null; }
+  var d;
+  try{ d = cx.getImageData(0, 0, 120, 90).data; }catch(e){ return null; }
+  var W = 120, H = 90, n = W * H;
+  var L = new Float32Array(n), S = new Float32Array(n);
+  var i, r, g, b, lm, mx, mn, Lsum = 0, Ssum = 0;
+  for(i = 0; i < n; i++){
+    r = d[i*4] / 255; g = d[i*4+1] / 255; b = d[i*4+2] / 255;
+    lm = 0.2126*r + 0.7152*g + 0.0722*b;
+    mx = Math.max(r, g, b); mn = Math.min(r, g, b);
+    var s = mx > 0.02 ? (mx - mn) / mx : 0;
+    L[i] = lm; S[i] = s; Lsum += lm; Ssum += s;
+  }
+  var Lmean = Lsum / n, Smean = Ssum / n;
+  /* 主体：把显著度（亮度偏离 + 饱和度 + 高光）池化到 15×11 网格，取高亮区质心 */
+  var GX = 15, GY = 11, gw = W / GX, gh = H / GY;
+  var gI = new Float32Array(GX * GY);
+  for(i = 0; i < n; i++){
+    var px = i % W, py = (i / W) | 0;
+    var gx = (px / gw) | 0, gy = (py / gh) | 0;
+    if(gx >= GX) gx = GX - 1; if(gy >= GY) gy = GY - 1;
+    var interest = Math.abs(L[i] - Lmean) * 1.3 + S[i] * 1.6 + (L[i] > 0.92 ? (L[i] - 0.92) * 2.5 : 0);
+    gI[gy * GX + gx] += interest;
+  }
+  var maxI = 0;
+  for(var c2 = 0; c2 < gI.length; c2++){ if(gI[c2] > maxI) maxI = gI[c2]; }
+  var sumW = 0, accx = 0, accy = 0;
+  for(var gy2 = 0; gy2 < GY; gy2++) for(var gx2 = 0; gx2 < GX; gx2++){
+    var v = gI[gy2 * GX + gx2];
+    if(v > maxI * 0.35){ sumW += v; accx += v * (gx2 + 0.5); accy += v * (gy2 + 0.5); }
+  }
+  var sx, sy;
+  if(sumW > 0){ sx = accx / sumW / GX; sy = accy / sumW / GY; } else { sx = 0.5; sy = 0.5; }
+  /* 最近三分交点 */
+  var TP = [[1/3,1/3],[2/3,1/3],[1/3,2/3],[2/3,2/3]];
+  var best = 1e9, bx = 0.5, by = 0.5;
+  for(var t = 0; t < 4; t++){
+    var ddx = TP[t][0] - sx, ddy = TP[t][1] - sy, dd = ddx*ddx + ddy*ddy;
+    if(dd < best){ best = dd; bx = TP[t][0]; by = TP[t][1]; }
+  }
+  var sd = Math.sqrt(best);
+  /* 地平线：行平均亮度梯度最大处；再按列穿越中值点拟合斜率求倾斜角 */
+  var rowL = new Float32Array(H);
+  for(var y = 0; y < H; y++){ var s2 = 0; for(var x = 0; x < W; x++) s2 += L[y*W + x]; rowL[y] = s2 / W; }
+  var maxg = 0, yh = 0.5;
+  for(var y2 = 1; y2 < H; y2++){ var gr = Math.abs(rowL[y2] - rowL[y2-1]); if(gr > maxg){ maxg = gr; yh = y2 / H; } }
+  var hasHorizon = maxg > 0.07 && Math.abs(yh - 0.5) < 0.42;
+  var tilt = 0;
+  if(hasHorizon){
+    var med = Lmean, ptsX = [], ptsY = [], K = 12;
+    for(var k = 0; k < K; k++){
+      var col = ((k + 0.5) / K * W) | 0; if(col >= W) col = W - 1;
+      var found = -1;
+      for(var yy = 1; yy < H; yy++){
+        var Lc = L[yy*W + col], Lp = L[(yy-1)*W + col];
+        if((Lp - med) * (Lc - med) < 0){ found = yy; break; }
+      }
+      if(found >= 0){ ptsX.push((k + 0.5) / K); ptsY.push(found / H); }
+    }
+    if(ptsX.length >= 3){
+      var nP = ptsX.length, sxv = 0, syv = 0, sxx = 0, sxy = 0;
+      for(var p = 0; p < nP; p++){ sxv += ptsX[p]; syv += ptsY[p]; sxx += ptsX[p]*ptsX[p]; sxy += ptsX[p]*ptsY[p]; }
+      var denom = nP * sxx - sxv * sxv;
+      var slope = denom !== 0 ? (nP * sxy - sxv * syv) / denom : 0;
+      tilt = Math.atan(slope) * 180 / Math.PI;
+    }
+  }
+  /* 评分：主体贴近三分 +30，地平线贴三分 +15，倾斜扣分 */
+  var score = 70 + Math.max(0, 1 - sd / 0.28) * 30;
+  if(hasHorizon){
+    var dh = Math.min(Math.abs(yh - 1/3), Math.abs(yh - 2/3));
+    score += Math.max(0, 1 - dh / 0.22) * 15;
+    score -= Math.min(22, Math.abs(tilt) * 4);
+  }
+  score = Math.max(20, Math.min(99, Math.round(score)));
+  return {sx:sx, sy:sy, tx:bx, ty:by, sd:sd, score:score, hasHorizon:hasHorizon, horizonY:yh, tilt:tilt};
+}
+function compDir(sx, sy, tx, ty){
+  var parts = [];
+  if(tx - sx > 0.03) parts.push('右'); else if(sx - tx > 0.03) parts.push('左');
+  if(ty - sy > 0.03) parts.push('下'); else if(sy - ty > 0.03) parts.push('上');
+  return parts.length ? parts.join('') : '中心';
+}
+function compThird(tx, ty){ return (tx < 0.5 ? '左' : '右') + (ty < 0.5 ? '上' : '下') + '三分点'; }
+function drawComp(ctx, W, H, res){
+  ctx.save();
+  var R = Math.max(6, W * 0.018), lw = Math.max(1, W * 0.0025);
+  ctx.strokeStyle = 'rgba(240,160,60,.92)'; ctx.lineWidth = lw;
+  [[1/3,1/3],[2/3,1/3],[1/3,2/3],[2/3,2/3]].forEach(function(p){
+    ctx.beginPath(); ctx.arc(p[0]*W, p[1]*H, R, 0, Math.PI*2); ctx.stroke();
+  });
+  var sx = res.sx*W, sy = res.sy*H, sR = Math.max(14, W*0.05);
+  ctx.strokeStyle = 'rgba(61,220,132,.95)'; ctx.lineWidth = Math.max(2, W*0.004);
+  ctx.beginPath(); ctx.arc(sx, sy, sR, 0, Math.PI*2); ctx.stroke();
+  if(res.sd > 0.07){
+    var tx = res.tx*W, ty = res.ty*H;
+    ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = Math.max(1.5, W*0.003);
+    ctx.setLineDash([W*0.012, W*0.012]);
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke(); ctx.setLineDash([]);
+    var ang = Math.atan2(ty - sy, tx - sx), ah = Math.max(8, W*0.012);
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx - ah*Math.cos(ang - 0.4), ty - ah*Math.sin(ang - 0.4));
+    ctx.lineTo(tx - ah*Math.cos(ang + 0.4), ty - ah*Math.sin(ang + 0.4));
+    ctx.closePath(); ctx.fill();
+  }
+  if(res.hasHorizon){
+    ctx.strokeStyle = 'rgba(120,180,255,.85)'; ctx.lineWidth = Math.max(1.5, W*0.003);
+    ctx.save();
+    ctx.translate(W/2, H/2); ctx.rotate(res.tilt * Math.PI / 180);
+    ctx.beginPath();
+    ctx.moveTo(-W/2, (res.horizonY - 0.5)*H); ctx.lineTo(W/2, (res.horizonY - 0.5)*H); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+function updateCompTip(res){
+  var tip = $('#compTip');
+  if(!tip) return;
+  var msg = '构图评分 ' + res.score;
+  if(res.sd > 0.07){
+    msg += ' · 主体偏' + compDir(res.sx, res.sy, res.tx, res.ty) + ' → 移到' + compThird(res.tx, res.ty);
+  }else if(res.hasHorizon && Math.abs(res.tilt) > 2){
+    msg += ' · 地平线歪 ' + Math.round(Math.abs(res.tilt)) + '° → 回正';
+  }else if(res.hasHorizon && Math.abs(res.horizonY - 0.5) < 0.07){
+    msg += ' · 地平线居中 → 放上/下三分线';
+  }else{
+    msg += ' · 不错，保持';
+  }
+  tip.textContent = msg;
+  tip.style.display = 'block';
+}
+function updateComp(){
+  if(!compOn || !compOv) return;
+  var now = performance.now();
+  if(now - compLast < 180) return;          /* 分析节流 ~5fps */
+  compLast = now;
+  if(compOv.width !== canvas.width || compOv.height !== canvas.height){
+    compOv.width = canvas.width; compOv.height = canvas.height;
+  }
+  var ctx = compOv.getContext('2d');
+  ctx.clearRect(0, 0, compOv.width, compOv.height);
+  var res = analyzeComposition();
+  if(!res){ var tip = $('#compTip'); if(tip) tip.style.display = 'none'; return; }
+  drawComp(ctx, compOv.width, compOv.height, res);
+  updateCompTip(res);
+}
+function compToggle(){
+  compOn = !compOn;
+  var ov = $('#compOv'); if(ov) ov.style.display = compOn ? 'block' : 'none';
+  var tip = $('#compTip'); if(tip) tip.style.display = compOn ? 'block' : 'none';
+  if(!compOn && ov){ var c = ov.getContext('2d'); c.clearRect(0, 0, ov.width, ov.height); }
+  updateToolBarText();
+  toast(compOn ? '构图提示开：绿色环=主体，金色点=三分交点，蓝线=检测到的地平线'
+               : '构图提示关');
+}
+
+/* ---------- 画幅比例 ---------- */
+var ASPECTS = [
+  {id:'full', name:'原始', r:0},
+  {id:'1:1',  name:'1:1',  r:1},
+  {id:'4:3',  name:'4:3',  r:4/3},
+  {id:'16:9', name:'16:9', r:16/9}
+];
+
+/* ---------- 专业参数（track constraints） ---------- */
+var PRO_KEYS = [
+  {k:'zoom',                 n:'变焦倍率', f:function(v){ return v.toFixed(1) + '×'; }},
+  {k:'focusDistance',        n:'对焦距离', f:function(v){ return v.toFixed(2) + 'm'; }},
+  {k:'exposureCompensation', n:'曝光补偿', f:function(v){ return (v > 0 ? '+' : '') + v; }},
+  {k:'colorTemperature',     n:'色温',    f:function(v){ return Math.round(v) + 'K'; }},
+  {k:'iso',                  n:'感光度',  f:function(v){ return 'ISO' + Math.round(v); }},
+  {k:'brightness',           n:'亮度',    f:function(v){ return '' + Math.round(v); }},
+  {k:'contrast',             n:'对比度',  f:function(v){ return '' + Math.round(v); }},
+  {k:'saturation',           n:'饱和度',  f:function(v){ return '' + Math.round(v); }},
+  {k:'sharpness',            n:'锐度',    f:function(v){ return '' + Math.round(v); }}
+];
+
+/* ---------- 状态 ---------- */
+var state   = P(PRESETS[0].p);
+var curPreset = 0;
+var mode    = 'album';      // 'live' | 'album'
+var bitmap  = null;
+var captured= null;
+var frozen  = false;
+var facing  = 'environment';
+var stream  = null;
+var frameN  = 0;
+var mixBak  = null;
+var bridgeBusy = false;
+var curMove = 0, moveDur = 3, moveStart = 0;
+var seqIdx = -1, recDur = 3;      /* 一键出片序列 / 本次录制总时长 */
+var recording = false, recorder = null, recChunks = [], recMime = '', recExt = 'webm';
+/* v1.3 直接录像 */
+var camMode = 'photo';                                    /* 'photo' | 'video' */
+var plainRec = false, plainT0 = 0, plainTimerInt = null;
+var plainMime = '', plainExt = 'webm';
+/* v1.2 状态 */
+var leOn = false, leV = 0.5;                 /* 光轨 */
+var tl = {on:false, interval:2, maxF:150, blobs:[], last:0};  /* 延时 */
+var tlBusy = false;
+var timerSec = 0, counting = false, timerTk = null;           /* 定时 */
+var gridOn = false, levelOn = false, stampOn = false;         /* 网格/水平/水印 */
+var compOn = false;                                           /* 构图提示 */
+var compC = null;                                             /* 构图分析离屏画布 */
+var compOv = $('#compOv');                                    /* 构图覆盖层 */
+var micOn = false, micStream = null;                          /* 收音 */
+var aspectIdx = 0;                                            /* 画幅 */
+var bursting = false;                                         /* 连拍锁 */
+var torchOn = false;
+var customs = [];
+try{ customs = JSON.parse(localStorage.getItem('lk_customs') || '[]'); }catch(e){ customs = []; }
+
+var canvas = $('#gl'), video = $('#cam'), fileInput = $('#file');
+var gl = canvas.getContext('webgl', {preserveDrawingBuffer:true, antialias:false, alpha:false})
+      || canvas.getContext('experimental-webgl', {preserveDrawingBuffer:true, antialias:false, alpha:false});
+
+/* ---------- 着色器 ---------- */
+var VSH =
+'attribute vec2 aPos;\n' +
+'varying vec2 vUv;\n' +
+'void main(){\n' +
+'  vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5);\n' +
+'  gl_Position = vec4(aPos, 0.0, 1.0);\n' +
+'}\n';
+
+var FSH =
+'precision highp float;\n' +
+'varying vec2 vUv;\n' +
+'uniform sampler2D u_tex;\n' +
+'uniform vec2 u_texel;\n' +
+'uniform vec2 u_off;\n' +
+'uniform float u_scale;\n' +
+'uniform float u_rot;\n' +
+'uniform float u_mix;\n' +
+'uniform float u_exposure;\n' +
+'uniform float u_contrast;\n' +
+'uniform float u_saturation;\n' +
+'uniform float u_temperature;\n' +
+'uniform float u_tint;\n' +
+'uniform float u_highlights;\n' +
+'uniform float u_shadows;\n' +
+'uniform float u_curve;\n' +
+'uniform float u_fade;\n' +
+'uniform float u_grain;\n' +
+'uniform float u_vignette;\n' +
+'uniform float u_sharpen;\n' +
+'uniform float u_bw;\n' +
+'uniform float u_seed;\n' +
+'uniform vec3 u_splitSh;\n' +
+'uniform vec3 u_splitHi;\n' +
+'uniform float u_splitShA;\n' +
+'uniform float u_splitHiA;\n' +
+'uniform vec2 u_cropS;\n' +
+'uniform vec2 u_cropO;\n' +
+'uniform float u_smooth;\n' +
+'uniform float u_alpha;\n' +
+'float hash(vec2 p){\n' +
+'  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453 + u_seed);\n' +
+'}\n' +
+'void main(){\n' +
+'  vec2 uv = u_cropO + vUv * u_cropS;\n' +
+'  if(u_scale > 1.0001 || abs(u_off.x) > 0.0001 || abs(u_off.y) > 0.0001 || abs(u_rot) > 0.0001){\n' +
+'    vec2 pc = uv - vec2(0.5);\n' +
+'    float cs = cos(u_rot);\n' +
+'    float sn = sin(u_rot);\n' +
+'    pc = vec2(pc.x * cs - pc.y * sn, pc.x * sn + pc.y * cs);\n' +
+'    uv = vec2(0.5) + pc / u_scale + u_off;\n' +
+'  }\n' +
+'  vec3 col = texture2D(u_tex, uv).rgb;\n' +
+'  vec3 orig = col;\n' +
+'  if(u_sharpen > 0.001){\n' +
+'    vec3 nb = texture2D(u_tex, uv + vec2(u_texel.x, 0.0)).rgb\n' +
+'            + texture2D(u_tex, uv - vec2(u_texel.x, 0.0)).rgb\n' +
+'            + texture2D(u_tex, uv + vec2(0.0, u_texel.y)).rgb\n' +
+'            + texture2D(u_tex, uv - vec2(0.0, u_texel.y)).rgb;\n' +
+'    col += (col - nb * 0.25) * u_sharpen * 1.4;\n' +
+'  }\n' +
+'  if(u_smooth > 0.001){\n' +
+'    float skin = smoothstep(0.01, 0.12, col.r - col.b) * smoothstep(0.02, 0.15, col.g - col.b);\n' +
+'    vec3 bl = texture2D(u_tex, uv + vec2(u_texel.x * 2.0, 0.0)).rgb\n' +
+'            + texture2D(u_tex, uv - vec2(u_texel.x * 2.0, 0.0)).rgb\n' +
+'            + texture2D(u_tex, uv + vec2(0.0, u_texel.y * 2.0)).rgb\n' +
+'            + texture2D(u_tex, uv - vec2(0.0, u_texel.y * 2.0)).rgb;\n' +
+'    col = mix(col, bl * 0.25, skin * u_smooth * 0.85);\n' +
+'  }\n' +
+'  col *= exp2(u_exposure * 1.25);\n' +
+'  col.r *= 1.0 + u_temperature * 0.18 + u_tint * 0.05;\n' +
+'  col.g *= 1.0 - u_tint * 0.15;\n' +
+'  col.b *= 1.0 - u_temperature * 0.18 + u_tint * 0.05;\n' +
+'  float lm = dot(col, vec3(0.2126, 0.7152, 0.0722));\n' +
+'  float hiM = smoothstep(0.45, 1.0, lm);\n' +
+'  vec3 hiT = mix(col, 1.0 - col, step(0.0, u_highlights));\n' +
+'  col += u_highlights * 0.55 * hiM * hiT;\n' +
+'  float shM = 1.0 - smoothstep(0.0, 0.55, lm);\n' +
+'  vec3 shT = mix(col, 1.0 - col, step(0.0, u_shadows));\n' +
+'  col += u_shadows * 0.55 * shM * shT;\n' +
+'  col = (col - 0.5) * (1.0 + u_contrast * 0.9) + 0.5;\n' +
+'  col = mix(col, col * col * (3.0 - 2.0 * col), clamp(u_curve, 0.0, 1.0));\n' +
+'  col = col * (1.0 - u_fade * 0.22) + u_fade * 0.11;\n' +
+'  lm = dot(col, vec3(0.2126, 0.7152, 0.0722));\n' +
+'  col = mix(vec3(lm), col, 1.0 + u_saturation);\n' +
+'  vec3 mono = vec3(dot(col, vec3(0.40, 0.50, 0.10)));\n' +
+'  col = mix(col, mono, u_bw);\n' +
+'  float shM2 = 1.0 - smoothstep(0.0, 0.6, lm);\n' +
+'  col += (u_splitSh - vec3(0.5)) * u_splitShA * 0.5 * shM2;\n' +
+'  float hiM2 = smoothstep(0.4, 1.0, lm);\n' +
+'  col += (u_splitHi - vec3(0.5)) * u_splitHiA * 0.5 * hiM2;\n' +
+'  float d = distance(vUv, vec2(0.5));\n' +
+'  col *= 1.0 - u_vignette * smoothstep(0.30, 0.72, d) * 0.85;\n' +
+'  if(u_grain > 0.001){\n' +
+'    float g = hash(gl_FragCoord.xy) - 0.5;\n' +
+'    col += g * u_grain * 0.12 * (1.0 - lm * 0.55);\n' +
+'  }\n' +
+'  col = clamp(col, 0.0, 1.0);\n' +
+'  gl_FragColor = vec4(mix(orig, col, u_mix), u_alpha);\n' +
+'}\n';
+
+var prog = null, tex = null, loc = {};
+var US = ['mix','exposure','contrast','saturation','temperature','tint','highlights','shadows',
+          'curve','fade','grain','vignette','sharpen','bw','splitShA','splitHiA'];
+var U3 = ['splitSh','splitHi'];
+
+function compile(type, src){
+  var s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    console.error(gl.getShaderInfoLog(s));
+    return null;
+  }
+  return s;
+}
+function bootGL(){
+  if(!gl) return;
+  var vs = compile(gl.VERTEX_SHADER, VSH);
+  var fs = compile(gl.FRAGMENT_SHADER, FSH);
+  if(!vs || !fs) return;
+  prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+    console.error(gl.getProgramInfoLog(prog));
+    prog = null;
+    return;
+  }
+  gl.useProgram(prog);
+  var buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  var aPos = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+  US.forEach(function(k){ loc[k] = gl.getUniformLocation(prog, 'u_' + k); });
+  U3.forEach(function(k){ loc[k] = gl.getUniformLocation(prog, 'u_' + k); });
+  loc.texel  = gl.getUniformLocation(prog, 'u_texel');
+  loc.off    = gl.getUniformLocation(prog, 'u_off');
+  loc.scale  = gl.getUniformLocation(prog, 'u_scale');
+  loc.rot    = gl.getUniformLocation(prog, 'u_rot');
+  loc.seed   = gl.getUniformLocation(prog, 'u_seed');
+  loc.cropS  = gl.getUniformLocation(prog, 'u_cropS');
+  loc.cropO  = gl.getUniformLocation(prog, 'u_cropO');
+  loc.smooth = gl.getUniformLocation(prog, 'u_smooth');
+  loc.alpha  = gl.getUniformLocation(prog, 'u_alpha');
+  loc.tex    = gl.getUniformLocation(prog, 'u_tex');
+  tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.uniform1i(loc.tex, 0);
+}
+
+function updateTexture(src){
+  if(!gl || !tex) return;
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+}
+function setParams(seed){
+  US.forEach(function(k){ gl.uniform1f(loc[k], state[k]); });
+  U3.forEach(function(k){ gl.uniform3f(loc[k], state[k][0], state[k][1], state[k][2]); });
+  gl.uniform2f(loc.texel, 1/canvas.width, 1/canvas.height);
+  gl.uniform1f(loc.seed, seed);
+  gl.uniform1f(loc.smooth, state.smooth);
+}
+/* ---------- 画幅裁剪 ---------- */
+function cropParamsFor(sw, sh){
+  var a = ASPECTS[aspectIdx];
+  if(!a.r || !sw || !sh) return {sx:1, sy:1, ox:0, oy:0};
+  var sr = sw / sh;
+  if(Math.abs(sr - a.r) < 0.004) return {sx:1, sy:1, ox:0, oy:0};
+  if(sr > a.r){
+    var w = a.r / sr;
+    return {sx:w, sy:1, ox:(1 - w) / 2, oy:0};
+  }
+  var hh = sr / a.r;
+  return {sx:1, sy:hh, ox:0, oy:(1 - hh) / 2};
+}
+function cropParams(){
+  var src = null;
+  if(mode === 'live' && !frozen && stream) src = video;
+  else if(frozen && captured) src = captured;
+  else if(mode === 'album' && bitmap) src = bitmap;
+  if(!src) return {sx:1, sy:1, ox:0, oy:0};
+  var sw = src.videoWidth || src.width;
+  var sh = src.videoHeight || src.height;
+  return cropParamsFor(sw, sh);
+}
+function setCanvasFor(src){
+  if(!src) return;
+  var sw = src.videoWidth || src.width;
+  var sh = src.videoHeight || src.height;
+  if(!sw || !sh) return;
+  var cp = cropParamsFor(sw, sh);
+  var cw = Math.max(2, Math.round(sw * cp.sx));
+  var ch = Math.max(2, Math.round(sh * cp.sy));
+  if(canvas.width !== cw) canvas.width = cw;
+  if(canvas.height !== ch) canvas.height = ch;
+}
+function evalSeq(sq, t){
+  var acc = 0;
+  for(var i = 0; i < sq.seq.length; i++){
+    var seg = sq.seq[i];
+    if(t < acc + seg[1]) return MOVES[seg[0]].f((t - acc) / seg[1]);
+    acc += seg[1];
+  }
+  var last = sq.seq[sq.seq.length - 1];
+  return MOVES[last[0]].f(1);
+}
+function moveParams(){
+  if(leOn && mode === 'live' && !frozen) return {s:1, x:0, y:0, r:0};
+  if(frozen) return {s:1, x:0, y:0, r:0};
+  var el = (performance.now() - moveStart) / 1000;   /* 秒 */
+  if(seqIdx >= 0){
+    var sq = SEQS[seqIdx];
+    if(!sq) return {s:1, x:0, y:0, r:0};
+    if(recording && !plainRec){
+      return evalSeq(sq, Math.min(el, sq.dur));      /* 一键出片：单次播完 */
+    }
+    var T = el % (2 * sq.dur);                       /* 预览/视频模式：往返循环 */
+    return evalSeq(sq, T <= sq.dur ? T : 2 * sq.dur - T);
+  }
+  if(curMove === 0) return {s:1, x:0, y:0, r:0};
+  var m = MOVES[curMove];
+  var e;
+  if(recording && !plainRec){
+    e = Math.min(1, el / moveDur);
+  }else if(plainRec || (camMode === 'video' && mode === 'live')){
+    var cyc = (el / moveDur) % 2;
+    e = cyc <= 1 ? cyc : 2 - cyc;
+  }else{
+    e = (el / moveDur) - Math.floor(el / moveDur);
+  }
+  return m.f(e);
+}
+function renderFrame(){
+  if(!gl || !prog || canvas.width < 2) return;
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  var p = moveParams();
+  gl.uniform1f(loc.scale, p.s);
+  gl.uniform2f(loc.off, p.x, p.y);
+  gl.uniform1f(loc.rot, p.r);
+  var cp = cropParams();
+  gl.uniform2f(loc.cropS, cp.sx, cp.sy);
+  gl.uniform2f(loc.cropO, cp.ox, cp.oy);
+  var leActive = leOn && mode === 'live' && !frozen && !recording;
+  if(leActive){
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform1f(loc.alpha, 0.03 + leV * 0.27);
+  }else{
+    gl.disable(gl.BLEND);
+    gl.uniform1f(loc.alpha, 1.0);
+  }
+  setParams(mode === 'live' && !frozen ? (frameN % 997) : 0);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function clearAccum(){
+  if(!gl) return;
+  gl.disable(gl.BLEND);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
+
+/* ---------- 工具 ---------- */
+function setState(s){ document.body.className = 'state-' + s; }
+function inState(s){ return document.body.classList.contains('state-' + s); }
+var toastTimer = null;
+function toast(msg){
+  var t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.classList.remove('on'); }, 2200);
+}
+function stamp(){
+  var d = new Date();
+  function p2(x){ return (x < 10 ? '0' : '') + x; }
+  return '' + d.getFullYear() + p2(d.getMonth()+1) + p2(d.getDate()) + '_' + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds());
+}
+function stampHuman(c2d, w, h){
+  var d = new Date();
+  function p2(x){ return (x < 10 ? '0' : '') + x; }
+  var txt = '' + d.getFullYear() + '.' + p2(d.getMonth()+1) + '.' + p2(d.getDate()) + '  ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+  var fs = Math.max(18, Math.round(w * 0.032));
+  c2d.font = '500 ' + fs + 'px sans-serif';
+  var m = c2d.measureText(txt);
+  var pad = fs * 0.6;
+  c2d.fillStyle = 'rgba(0,0,0,0.35)';
+  c2d.fillRect(w - m.width - pad * 2.6, h - fs - pad * 1.8, m.width + pad * 1.8, fs + pad * 1.1);
+  c2d.fillStyle = 'rgba(255,255,255,0.92)';
+  c2d.textBaseline = 'top';
+  c2d.fillText(txt, w - m.width - pad * 1.7, h - fs - pad * 1.25);
+}
+function stopStream(){
+  if(stream){
+    stream.getTracks().forEach(function(t){ t.stop(); });
+    stream = null;
+  }
+}
+function stopMic(){
+  if(micStream){
+    micStream.getTracks().forEach(function(t){ t.stop(); });
+    micStream = null;
+  }
+  micOn = false;
+}
+function loadBitmap(blob){
+  return new Promise(function(resolve){
+    var done = false;
+    function tryBM(opts){
+      if(done) return;
+      createImageBitmap(blob, opts).then(function(b){ done = true; resolve(b); })
+        .catch(function(){ tryBM2(); });
+    }
+    function tryBM2(){
+      if(done) return;
+      createImageBitmap(blob).then(function(b){ done = true; resolve(b); })
+        .catch(function(){ tryImg(); });
+    }
+    function tryImg(){
+      if(done) return;
+      var img = new Image();
+      var url = URL.createObjectURL(blob);
+      img.onload = function(){ done = true; URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = function(){ URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    }
+    tryBM({imageOrientation:'from-image'});
+  });
+}
+function capSize(src){
+  var max = 4096;
+  if(gl){
+    var mts = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    if(mts) max = Math.min(mts, 4096);
+  }
+  var w = src.width, h = src.height;
+  var m = Math.max(w, h);
+  if(!m || m <= max) return Promise.resolve(src);
+  var scale = max / m;
+  var tw = Math.round(w * scale), th = Math.round(h * scale);
+  if(typeof createImageBitmap === 'function'){
+    return createImageBitmap(src, {resizeWidth:tw, resizeHeight:th, resizeQuality:'high'})
+      .catch(function(){ return manualDown(src, tw, th); });
+  }
+  return Promise.resolve(manualDown(src, tw, th));
+}
+function manualDown(src, tw, th){
+  var c = document.createElement('canvas');
+  c.width = tw; c.height = th;
+  var ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, tw, th);
+  return c;
+}
+
+/* ---------- 统一保存（照片/视频，网页/App 双路） ---------- */
+function downloadBlob(b, name){
+  var url = URL.createObjectURL(b);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  toast('已下载（可在浏览器下载里查看）');
+}
+function deliverMedia(blob, mime, name, isVideo){
+  var IS_APP = !!(window.AndroidBridge && window.AndroidBridge.saveBegin);
+  if(IS_APP){
+    if(bridgeBusy){ toast('正在保存，请稍候'); return; }
+    bridgeBusy = true;
+    var fr = new FileReader();
+    fr.onload = function(){
+      try{
+        var b64 = String(fr.result).split(',')[1];
+        var CH = 262144;
+        var n = Math.ceil(b64.length / CH);
+        AndroidBridge.saveBegin(name, n, isVideo ? 1 : 0);
+        for(var i = 0; i < n; i++) AndroidBridge.saveChunk(b64.substr(i * CH, CH));
+        AndroidBridge.saveEnd();
+        bridgeBusy = false;
+        toast(isVideo ? '视频已保存到 Movies/LensKit' : '已保存到 相册/LensKit');
+      }catch(e){
+        bridgeBusy = false;
+        toast('保存失败');
+      }
+    };
+    fr.onerror = function(){ bridgeBusy = false; toast('保存失败'); };
+    fr.readAsDataURL(blob);
+    return;
+  }
+  var file = null;
+  try{ file = new File([blob], name, {type:mime}); }catch(e){}
+  if(file && navigator.canShare && navigator.canShare({files:[file]})){
+    navigator.share({files:[file]}).then(function(){
+      toast('已保存');
+    }).catch(function(e){
+      if(e && e.name === 'AbortError') return;
+      downloadBlob(blob, name);
+    });
+  }else{
+    downloadBlob(blob, name);
+  }
+}
+/* 普通照片导出（重绘一帧 + 可选水印） */
+function exportPhoto(){
+  if(!gl || !prog){ toast('渲染引擎未就绪'); return; }
+  renderFrame();
+  var w = canvas.width, h = canvas.height;
+  var done = function(b){
+    if(!b){ toast('导出失败'); return; }
+    deliverMedia(b, 'image/jpeg', 'LensKit_' + stamp() + '.jpg', false);
+  };
+  if(stampOn){
+    var c2 = document.createElement('canvas');
+    c2.width = w; c2.height = h;
+    var cx = c2.getContext('2d');
+    cx.drawImage(canvas, 0, 0);
+    stampHuman(cx, w, h);
+    c2.toBlob(done, 'image/jpeg', 0.95);
+  }else{
+    canvas.toBlob(done, 'image/jpeg', 0.95);
+  }
+}
+/* 光轨导出（不重绘，直接取累积画布） */
+function exportLE(){
+  var w = canvas.width, h = canvas.height;
+  var done = function(b){
+    if(!b){ toast('导出失败'); return; }
+    deliverMedia(b, 'image/jpeg', 'LensKit_LE_' + stamp() + '.jpg', false);
+  };
+  if(stampOn){
+    var c2 = document.createElement('canvas');
+    c2.width = w; c2.height = h;
+    var cx = c2.getContext('2d');
+    cx.drawImage(canvas, 0, 0);
+    stampHuman(cx, w, h);
+    c2.toBlob(done, 'image/jpeg', 0.95);
+  }else{
+    canvas.toBlob(done, 'image/jpeg', 0.95);
+  }
+  clearAccum();
+  toast('光轨照片已保存');
+}
+function save(){
+  if(recording){ toast('录制中，请稍候'); return; }
+  if(mode !== 'album' && !frozen){ toast('先拍照或选一张照片'); return; }
+  exportPhoto();
+}
+
+/* ---------- 运镜录制 ---------- */
+function pickMime(){
+  if(typeof MediaRecorder === 'undefined' || !canvas.captureStream) return null;
+  var cands = ['video/mp4;codecs=avc1.42E01E', 'video/mp4',
+               'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  for(var i = 0; i < cands.length; i++){
+    try{ if(MediaRecorder.isTypeSupported(cands[i])) return cands[i]; }catch(e){}
+  }
+  return null;
+}
+function updateProgress(){
+  var e = Math.min(1, (performance.now() - moveStart) / (recDur * 1000));
+  $('#prog').style.width = (e * 100).toFixed(1) + '%';
+}
+function startRecording(){
+  if(recording) return;
+  if(mode === 'album' && !bitmap){ toast('先选一张照片'); openPicker(); return; }
+  if(frozen){ toast('请先重拍，再录制运镜'); return; }
+  if(leOn){ toast('光轨模式下不能录制运镜'); return; }
+  if(tl.on){ toast('延时进行中，请先结束'); return; }
+  if(curMove === 0 && seqIdx < 0){ toast('请先在「运镜」面板选一个模板'); switchTab('move'); return; }
+  var mime = pickMime();
+  if(!mime){ toast('此环境不支持视频录制'); return; }
+  recMime = mime;
+  recExt = mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+  try{
+    var cs = canvas.captureStream(30);
+    if(micOn && micStream){
+      micStream.getAudioTracks().forEach(function(t){ try{ cs.addTrack(t); }catch(e){} });
+    }
+    recorder = new MediaRecorder(cs, {mimeType:mime, videoBitsPerSecond:8000000});
+  }catch(e){
+    toast('录像启动失败');
+    return;
+  }
+  recChunks = [];
+  recorder.ondataavailable = function(ev){ if(ev.data && ev.data.size) recChunks.push(ev.data); };
+  recorder.onstop = function(){
+    var blob = new Blob(recChunks, {type:recMime});
+    recChunks = [];
+    if(!blob.size){ toast('录制失败'); return; }
+    deliverMedia(blob, recMime, 'LensKit_' + stamp() + '.' + recExt, true);
+  };
+  recDur = (seqIdx >= 0) ? SEQS[seqIdx].dur : moveDur;
+  moveStart = performance.now();
+  recording = true;
+  document.body.classList.add('recording');
+  recorder.start();
+  $('#recBadge').style.display = 'flex';
+  $('#prog').style.display = 'block';
+  toast('开始录制 ' + recDur + 's 运镜' + (micOn ? '（含收音）' : ''));
+}
+function finishRecording(){
+  if(!recording) return;
+  recording = false;
+  plainRec = false;
+  if(plainTimerInt){ clearInterval(plainTimerInt); plainTimerInt = null; }
+  var rt = document.getElementById('recTime');
+  if(rt) rt.textContent = '';
+  updateMoveBadge();
+  document.body.classList.remove('recording');
+  $('#recBadge').style.display = 'none';
+  $('#prog').style.display = 'none';
+  $('#prog').style.width = '0%';
+  try{ recorder.stop(); }catch(e){}
+}
+/* ---------- 直接录像（照片/视频双模式） ---------- */
+function setCamMode(m){
+  if(recording){ toast('请先停止录制'); return; }
+  if(camMode === m) return;
+  camMode = m;
+  document.body.classList.toggle('cam-video', m === 'video');
+  var sp = document.getElementById('segPhoto');
+  var sv = document.getElementById('segVideo');
+  if(sp) sp.classList.toggle('on', m === 'photo');
+  if(sv) sv.classList.toggle('on', m === 'video');
+  if(m === 'video'){
+    toast('视频模式：按快门开始/停止录像'
+      + (seqIdx >= 0 ? ' · 一键「' + SEQS[seqIdx].name + '」' : (curMove > 0 ? ' · 已套用运镜「' + MOVES[curMove].name + '」' : '')));
+  }else{
+    toast('照片模式');
+  }
+}
+function toggleVideoRec(){
+  if(recording){ finishRecording(); return; }
+  if(mode !== 'live' || frozen){ toast('录像需在取景模式使用'); return; }
+  if(tl.on){ toast('延时进行中，请先结束'); return; }
+  if(leOn){ toast('光轨模式下不能录像'); return; }
+  startPlainRec();
+}
+function startPlainRec(){
+  if(!stream || video.readyState < 2){ toast('相机还没准备好'); return; }
+  var mime = pickMime();
+  if(!mime){ toast('此环境不支持视频录制'); return; }
+  plainMime = mime;
+  plainExt = mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+  try{
+    var cs = canvas.captureStream(30);
+    if(micOn && micStream){
+      micStream.getAudioTracks().forEach(function(t){ try{ cs.addTrack(t); }catch(e){} });
+    }
+    recorder = new MediaRecorder(cs, {mimeType:mime, videoBitsPerSecond:8000000});
+  }catch(e){
+    toast('录像启动失败');
+    return;
+  }
+  recChunks = [];
+  recorder.ondataavailable = function(ev){ if(ev.data && ev.data.size) recChunks.push(ev.data); };
+  recorder.onstop = function(){
+    var blob = new Blob(recChunks, {type:plainMime});
+    recChunks = [];
+    if(!blob.size){ toast('录制失败'); return; }
+    deliverMedia(blob, plainMime, 'LensKit_Video_' + stamp() + '.' + plainExt, true);
+  };
+  moveStart = performance.now();
+  plainRec = true;
+  recording = true;
+  plainT0 = performance.now();
+  document.body.classList.add('recording');
+  recorder.start();
+  $('#recBadge').style.display = 'flex';
+  updateMoveBadge();
+  updateRecTime();
+  plainTimerInt = setInterval(updateRecTime, 500);
+  toast('开始录像（上限 5 分钟）'
+    + (seqIdx >= 0 ? ' · 一键「' + SEQS[seqIdx].name + '」往返' : (curMove > 0 ? ' · 运镜「' + MOVES[curMove].name + '」' + moveDur + 's 往返' : ''))
+    + (micOn ? ' · 含收音' : ''));
+}
+function updateRecTime(){
+  var s = Math.floor((performance.now() - plainT0) / 1000);
+  var mm = Math.floor(s / 60), ss = s % 60;
+  var el = document.getElementById('recTime');
+  if(el) el.textContent = (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+  if(s >= 300){
+    toast('已达 5 分钟上限，自动停止');
+    finishRecording();
+  }
+}
+
+/* ---------- 相册流程 ---------- */
+function loadFile(f){
+  loadBitmap(f).then(function(bmp){
+    if(!bmp){ toast('图片读取失败'); return; }
+    return capSize(bmp).then(function(s){
+      bitmap = s;
+      stopStream();
+      stopMic();
+      leOn = false;
+      frozen = false; captured = null; mode = 'album';
+      setState('album');
+      setCanvasFor(bitmap);
+      updateTexture(bitmap);
+      updateMoveHint();
+      updateToolBarText();
+      renderFrame();
+    });
+  }).catch(function(){ toast('图片读取失败'); });
+}
+function openPicker(){ fileInput.click(); }
+
+/* ---------- 取景流程 ---------- */
+function startLive(){
+  mode = 'live'; frozen = false; captured = null;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    toast('此环境不支持摄像头，请用相册模式');
+    openPicker();
+    return;
+  }
+  setState('live');
+  updateMoveHint();
+  updateToolBarText();
+  var savedFacing = facing;
+  navigator.mediaDevices.getUserMedia({
+    audio:false,
+    video:{ facingMode:{ideal:savedFacing}, width:{ideal:1920}, height:{ideal:1080} }
+  }).then(function(s){
+    if(savedFacing !== facing){ s.getTracks().forEach(function(t){ t.stop(); }); return; }
+    stream = s;
+    video.srcObject = s;
+    clearAccum();
+    buildProSliders();
+    return video.play().catch(function(){});
+  }).catch(function(err){
+    stopStream();
+    mode = 'album';
+    toast('相机不可用(' + (err && err.name ? err.name : '未知') + ')，可改用相册模式');
+    setState('landing');
+  });
+}
+function flipCam(){
+  if(mode !== 'live' || recording) return;
+  if(leOn){ toast('先关闭光轨再翻转'); return; }
+  if(tl.on){ toast('先结束延时再翻转'); return; }
+  cancelCountdown();
+  facing = (facing === 'environment') ? 'user' : 'environment';
+  stopStream();
+  startLive();
+}
+function shutter(){
+  if(camMode === 'video'){ toggleVideoRec(); return; }
+  if(recording){ toast('录制中'); return; }
+  if(mode !== 'live'){ toast('请先打开取景器'); return; }
+  if(tl.on){ toast('延时进行中：先点顶部「延时」结束'); return; }
+  if(!stream || video.readyState < 2){ toast('相机还没准备好'); return; }
+  if(timerSec > 0 && !counting){
+    counting = true;
+    startCountdown(function(){ counting = false; shutterNow(); });
+    return;
+  }
+  shutterNow();
+}
+function shutterNow(){
+  if(leOn){ exportLE(); return; }
+  if(!stream || video.readyState < 2){ toast('相机还没准备好'); return; }
+  captured = document.createElement('canvas');
+  captured.width = video.videoWidth;
+  captured.height = video.videoHeight;
+  captured.getContext('2d').drawImage(video, 0, 0);
+  frozen = true;
+  setState('frozen');
+  setCanvasFor(captured);
+  updateTexture(captured);
+  updateMoveHint();
+  renderFrame();
+}
+function startCountdown(cb){
+  var left = timerSec;
+  var st = document.getElementById('stage');
+  var cd = document.createElement('div');
+  cd.id = 'countdown';
+  cd.style.cssText = 'position:absolute;z-index:9;top:50%;left:50%;transform:translate(-50%,-50%);font-size:76px;font-weight:700;color:#fff;text-shadow:0 2px 18px rgba(0,0,0,.65);pointer-events:none;';
+  cd.textContent = left;
+  st.appendChild(cd);
+  timerTk = setInterval(function(){
+    left--;
+    if(left <= 0){
+      clearInterval(timerTk);
+      timerTk = null;
+      if(cd.parentNode) cd.remove();
+      cb();
+    }else{
+      cd.textContent = left;
+    }
+  }, 1000);
+}
+function cancelCountdown(){
+  if(timerTk){ clearInterval(timerTk); timerTk = null; }
+  counting = false;
+  var cd = document.getElementById('countdown');
+  if(cd && cd.parentNode) cd.remove();
+}
+function retake(){
+  if(recording) return;
+  cancelCountdown();
+  frozen = false; captured = null;
+  setState('live');
+  updateMoveHint();
+  updateToolBarText();
+}
+
+/* ---------- 顶部工具条 ---------- */
+function buildToolBar(){
+  var bar = $('#toolBar');
+  var names = {grid:'网格', level:'水平', aspect:'比例', timer:'定时', burst:'连拍',
+               le:'光轨', tl:'延时', mic:'收音', stamp:'水印', comp:'构图'};
+  Object.keys(names).forEach(function(id){
+    var b = document.createElement('button');
+    b.className = 'tool';
+    b.id = 'tool_' + id;
+    b.textContent = names[id];
+    b.addEventListener('click', function(){ toolAction(id); });
+    bar.appendChild(b);
+  });
+  updateToolBarText();
+}
+function toolAction(id){
+  switch(id){
+    case 'grid':
+      gridOn = !gridOn;
+      $('#gridOv').style.display = gridOn ? 'block' : 'none';
+      break;
+    case 'level':
+      levelOn = !levelOn;
+      applyLevel();
+      break;
+    case 'aspect':
+      if(recording){ toast('录制中不可改比例'); break; }
+      aspectIdx = (aspectIdx + 1) % ASPECTS.length;
+      applyAspect();
+      break;
+    case 'timer':
+      timerSec = timerSec === 0 ? 3 : (timerSec === 3 ? 10 : 0);
+      toast(timerSec ? ('定时 ' + timerSec + ' 秒') : '定时已关');
+      break;
+    case 'burst':
+      burst();
+      break;
+    case 'le':
+      leToggle();
+      break;
+    case 'tl':
+      tlToggle();
+      break;
+    case 'mic':
+      micToggle();
+      break;
+    case 'stamp':
+      stampOn = !stampOn;
+      toast(stampOn ? '水印开：保存时加日期' : '水印关');
+      break;
+    case 'comp':
+      compToggle();
+      break;
+  }
+  updateToolBarText();
+}
+function updateToolBarText(){
+  function set(id, txt, on){
+    var b = document.getElementById('tool_' + id);
+    if(!b) return;
+    b.textContent = txt;
+    b.classList.toggle('on', !!on);
+  }
+  set('grid', '网格', gridOn);
+  set('level', '水平', levelOn);
+  set('aspect', '比例 ' + ASPECTS[aspectIdx].name, aspectIdx > 0);
+  set('timer', timerSec ? '定时' + timerSec + 's' : '定时', timerSec > 0);
+  set('burst', '连拍', false);
+  set('le', '光轨', leOn);
+  set('tl', '延时', tl.on);
+  set('mic', '收音', micOn);
+  set('stamp', '水印', stampOn);
+  set('comp', '构图', compOn);
+}
+function levelHandler(ev){
+  var g = ev.gamma || 0;
+  var bubble = document.getElementById('levelBubble');
+  if(!bubble) return;
+  var dx = Math.max(-110, Math.min(110, g * 3));
+  bubble.style.transform = 'translateX(' + dx.toFixed(1) + 'px)';
+  bubble.classList.toggle('ok', Math.abs(g) < 1.5);
+}
+function applyLevel(){
+  var el = $('#levelOv');
+  if(levelOn){
+    el.style.display = 'block';
+    if(typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission){
+      DeviceOrientationEvent.requestPermission().then(function(r){
+        if(r === 'granted'){
+          window.addEventListener('deviceorientation', levelHandler);
+        }else{
+          levelOn = false;
+          el.style.display = 'none';
+          updateToolBarText();
+          toast('未授权方向传感器');
+        }
+      }).catch(function(){
+        levelOn = false;
+        el.style.display = 'none';
+        updateToolBarText();
+      });
+    }else{
+      window.addEventListener('deviceorientation', levelHandler);
+    }
+  }else{
+    el.style.display = 'none';
+    window.removeEventListener('deviceorientation', levelHandler);
+  }
+}
+function applyAspect(){
+  var src = (mode === 'live' && !frozen) ? video : (frozen ? captured : bitmap);
+  setCanvasFor(src);
+  if((mode === 'album' && bitmap) || frozen) renderFrame();
+  toast('比例 ' + ASPECTS[aspectIdx].name);
+}
+
+/* ---------- 光轨（长曝光） ---------- */
+function leToggle(){
+  if(recording){ toast('录制中不可切换光轨'); return; }
+  if(mode !== 'live' || frozen){ toast('光轨需在取景模式使用'); return; }
+  leOn = !leOn;
+  if(leOn){
+    clearAccum();
+    toast('光轨开启：稳住手机拍车流/星空，快门即出片');
+  }else{
+    clearAccum();
+    toast('光轨已关闭');
+  }
+  updateToolBarText();
+}
+
+/* ---------- 延时摄影 ---------- */
+function tlToggle(){
+  if(recording){ toast('运镜录制中，请稍候'); return; }
+  if(tlBusy){ toast('正在合成延时视频'); return; }
+  if(mode !== 'live' || frozen){ toast('延时需在取景模式使用'); return; }
+  if(!tl.on){
+    tl.on = true; tl.blobs = []; tl.last = 0;
+    toast('延时开始：每 ' + tl.interval + 's 一帧 · 再点「延时」结束并合成');
+  }else{
+    tl.on = false;
+    if(tl.blobs.length < 3){
+      toast('帧太少（' + tl.blobs.length + '），已放弃');
+      tl.blobs = [];
+      updateToolBarText();
+      return;
+    }
+    toast('开始合成 ' + tl.blobs.length + ' 帧');
+    composeTl();
+  }
+  updateToolBarText();
+}
+function captureTlFrame(){
+  if(!tl.on || recording || frozen) return;
+  var now = performance.now();
+  if(tl.last && now - tl.last < tl.interval * 1000) return;
+  tl.last = now;
+  if(tl.blobs.length >= tl.maxF){
+    toast('已达 ' + tl.maxF + ' 帧上限，自动合成');
+    tlToggle();
+    return;
+  }
+  canvas.toBlob(function(b){ if(b && tl.on) tl.blobs.push(b); }, 'image/jpeg', 0.9);
+}
+function composeTl(){
+  var blobs = tl.blobs.slice();
+  tl.blobs = [];
+  if(!blobs.length){ toast('没有可合成的帧'); return; }
+  var mime = pickMime();
+  if(!mime){ toast('此环境不支持视频合成'); return; }
+  tlBusy = true;
+  createImageBitmap(blobs[0]).then(function(first){
+    var tc = document.createElement('canvas');
+    tc.width = first.width;
+    tc.height = first.height;
+    var tctx = tc.getContext('2d');
+    tctx.drawImage(first, 0, 0);
+    var dec = [first];
+    var n = blobs.length;
+    var idx = 1;
+    var rec;
+    try{
+      var cs = tc.captureStream(30);
+      rec = new MediaRecorder(cs, {mimeType:mime, videoBitsPerSecond:8000000});
+    }catch(e){
+      tlBusy = false;
+      toast('合成失败');
+      return;
+    }
+    var chunks = [];
+    rec.ondataavailable = function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
+    rec.onstop = function(){
+      tlBusy = false;
+      var out = new Blob(chunks, {type:mime});
+      chunks = [];
+      if(!out.size){ toast('合成失败'); return; }
+      var ext = mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+      deliverMedia(out, mime, 'LensKit_TL_' + stamp() + '.' + ext, true);
+    };
+    function ensure(i){
+      if(i >= n || dec[i]) return;
+      createImageBitmap(blobs[i]).then(function(b2){ dec[i] = b2; }).catch(function(){ dec[i] = 'F'; });
+    }
+    ensure(1); ensure(2); ensure(3);
+    rec.start();
+    var lastPct = -1, lastDraw = 0, stallT0 = 0;
+    function tick(){
+      var now = performance.now();
+      var done = idx >= n;
+      if(!done && now - lastDraw >= 33){
+        var bm = dec[idx];
+        if(!bm && !stallT0) stallT0 = now;
+        if(!bm && now - stallT0 > 1500){ dec[idx] = 'F'; stallT0 = 0; }
+        if(bm === 'F'){
+          idx++;
+        }else if(bm){
+          lastDraw = now;
+          tctx.drawImage(bm, 0, 0, tc.width, tc.height);
+          if(bm.close) bm.close();
+          dec[idx] = null;
+          stallT0 = 0;
+          ensure(idx + 3);
+          idx++;
+        }
+        var pct = Math.round(idx / n * 100);
+        if(pct !== lastPct && pct % 10 === 0){ lastPct = pct; toast('合成中 ' + pct + '%'); }
+      }
+      if(done && now - lastDraw > 200){
+        setTimeout(function(){ try{ rec.stop(); }catch(e){} }, 50);
+        return;
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }).catch(function(){
+    tlBusy = false;
+    toast('合成失败：无法解码帧');
+  });
+}
+
+/* ---------- 连拍 ---------- */
+function burst(){
+  if(mode !== 'live' || frozen){ toast('连拍需在取景模式使用'); return; }
+  if(recording){ toast('运镜录制中，请稍候'); return; }
+  if(tl.on){ toast('延时进行中，请先结束'); return; }
+  if(leOn){ toast('光轨模式下不可连拍'); return; }
+  if(bursting) return;
+  bursting = true;
+  var n = 10, i = 0, shots = [];
+  toast('连拍 10 张…');
+  var t = setInterval(function(){
+    if(mode !== 'live' || frozen){ clearInterval(t); bursting = false; return; }
+    if(i >= n){
+      clearInterval(t);
+      var k = 0;
+      var t2 = setInterval(function(){
+        if(k >= shots.length){ clearInterval(t2); bursting = false; return; }
+        deliverMedia(shots[k], 'image/jpeg', 'LensKit_Burst_' + stamp() + '_' + (k + 1) + '.jpg', false);
+        k++;
+      }, 350);
+      return;
+    }
+    canvas.toBlob(function(b){ if(b) shots.push(b); }, 'image/jpeg', 0.92);
+    i++;
+  }, 260);
+}
+
+/* ---------- 收音 ---------- */
+function micToggle(){
+  if(recording){ toast('录制中不可切换收音'); return; }
+  if(mode !== 'live'){ toast('收音需在取景模式使用'); return; }
+  if(micOn){
+    stopMic();
+    updateToolBarText();
+    toast('收音已关闭');
+    return;
+  }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    toast('此环境不支持麦克风');
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({audio:true}).then(function(as){
+    micStream = as;
+    micOn = true;
+    updateToolBarText();
+    toast('收音已开：运镜视频将带声音');
+  }).catch(function(){
+    micOn = false;
+    updateToolBarText();
+    toast('麦克风不可用或未授权');
+  });
+}
+
+/* ---------- 专业页 ---------- */
+function setTorch(onv){
+  var track = stream && stream.getVideoTracks()[0];
+  if(!track){ toast('需在取景模式使用'); return; }
+  var c = {};
+  c.torch = !!onv;
+  track.applyConstraints({advanced:[c]}).then(function(){
+    torchOn = !!onv;
+    var tb = document.getElementById('torchBtn');
+    if(tb){
+      tb.classList.toggle('on', torchOn);
+      tb.textContent = torchOn ? '关闭补光灯' : '打开补光灯';
+    }
+  }).catch(function(){ toast('此设备不支持补光灯'); });
+}
+function buildProSliders(){
+  var wrap = document.getElementById('proSliders');
+  if(!wrap) return;
+  wrap.innerHTML = '';
+  var track = stream && stream.getVideoTracks()[0];
+  if(!track){
+    wrap.innerHTML = '<p class="pro-hint">进入取景器后，这里会列出当前相机支持的专业参数。</p>';
+    return;
+  }
+  var caps = {}, st = {};
+  try{ if(track.getCapabilities) caps = track.getCapabilities() || {}; }catch(e){}
+  try{ if(track.getSettings) st = track.getSettings() || {}; }catch(e){}
+  var any = false;
+  PRO_KEYS.forEach(function(d){
+    var c = caps[d.k];
+    if(!c || typeof c.min !== 'number' || c.min === c.max) return;
+    any = true;
+    var box = document.createElement('div');
+    box.className = 'sl';
+    var h = document.createElement('div');
+    h.className = 'sl-h';
+    var lb = document.createElement('span');
+    lb.textContent = d.n;
+    var val = document.createElement('b');
+    var inp = document.createElement('input');
+    inp.type = 'range';
+    var step = (typeof c.step === 'number' && c.step > 0) ? c.step : Math.max((c.max - c.min) / 200, 0.001);
+    inp.min = String(c.min);
+    inp.max = String(c.max);
+    inp.step = String(step);
+    var cur = (typeof st[d.k] === 'number') ? st[d.k] : c.min;
+    inp.value = String(cur);
+    val.textContent = d.f(cur);
+    inp.addEventListener('input', function(){
+      var v = Number(inp.value);
+      val.textContent = d.f(v);
+      var cc = {};
+      cc[d.k] = v;
+      track.applyConstraints({advanced:[cc]}).catch(function(){});
+    });
+    h.appendChild(lb);
+    h.appendChild(val);
+    box.appendChild(h);
+    box.appendChild(inp);
+    wrap.appendChild(box);
+  });
+  if(!any){
+    wrap.innerHTML = '<p class="pro-hint">当前相机没有暴露可调专业参数（不少手机前置镜头如此），可翻转镜头后重试。</p>';
+  }
+}
+function buildPro(){
+  var wrap = $('#proWrap');
+  wrap.innerHTML = '';
+  /* 光轨强度 */
+  var h1 = document.createElement('div');
+  h1.className = 'sec-h';
+  h1.textContent = '光轨 · 长曝光（顶部工具栏开关）';
+  wrap.appendChild(h1);
+  var leBox = document.createElement('div');
+  leBox.className = 'sl';
+  var leH = document.createElement('div');
+  leH.className = 'sl-h';
+  var leLb = document.createElement('span');
+  leLb.textContent = '光轨强度';
+  var leVal = document.createElement('b');
+  leVal.textContent = String(Math.round(leV * 100));
+  var leInp = document.createElement('input');
+  leInp.type = 'range';
+  leInp.min = '0'; leInp.max = '100'; leInp.step = '1';
+  leInp.value = String(Math.round(leV * 100));
+  leInp.addEventListener('input', function(){
+    leV = Number(leInp.value) / 100;
+    leVal.textContent = leInp.value;
+  });
+  leH.appendChild(leLb);
+  leH.appendChild(leVal);
+  leBox.appendChild(leH);
+  leBox.appendChild(leInp);
+  wrap.appendChild(leBox);
+  /* 延时设置 */
+  var h2 = document.createElement('div');
+  h2.className = 'sec-h';
+  h2.textContent = '延时摄影';
+  wrap.appendChild(h2);
+  var rowI = document.createElement('div');
+  rowI.className = 'chip-row';
+  var lbI = document.createElement('span');
+  lbI.className = 'pro-hint';
+  lbI.style.margin = '0 4px 0 0';
+  lbI.textContent = '间隔';
+  rowI.appendChild(lbI);
+  [1, 2, 5, 10].forEach(function(s){
+    var b = document.createElement('button');
+    b.className = 'pchip' + (tl.interval === s ? ' on' : '');
+    b.textContent = s + 's';
+    b.addEventListener('click', function(){
+      tl.interval = s;
+      var pc = rowI.querySelectorAll('.pchip');
+      for(var i = 0; i < pc.length; i++) pc[i].classList.toggle('on', pc[i].textContent === s + 's');
+    });
+    rowI.appendChild(b);
+  });
+  wrap.appendChild(rowI);
+  var rowF = document.createElement('div');
+  rowF.className = 'chip-row';
+  var lbF = document.createElement('span');
+  lbF.className = 'pro-hint';
+  lbF.style.margin = '0 4px 0 0';
+  lbF.textContent = '上限';
+  rowF.appendChild(lbF);
+  [60, 100, 150].forEach(function(m){
+    var b = document.createElement('button');
+    b.className = 'pchip' + (tl.maxF === m ? ' on' : '');
+    b.textContent = m + '帧';
+    b.addEventListener('click', function(){
+      tl.maxF = m;
+      var pc = rowF.querySelectorAll('.pchip');
+      for(var i = 0; i < pc.length; i++) pc[i].classList.toggle('on', pc[i].textContent === m + '帧');
+    });
+    rowF.appendChild(b);
+  });
+  wrap.appendChild(rowF);
+  /* 补光灯 */
+  var torch = document.createElement('button');
+  torch.className = 'pro-btn';
+  torch.id = 'torchBtn';
+  torch.textContent = '打开补光灯';
+  torch.addEventListener('click', function(){
+    setTorch(!torch.classList.contains('on'));
+  });
+  wrap.appendChild(torch);
+  /* 相机专业参数 */
+  var h3 = document.createElement('div');
+  h3.className = 'sec-h';
+  h3.textContent = '相机专业参数';
+  wrap.appendChild(h3);
+  var ps = document.createElement('div');
+  ps.id = 'proSliders';
+  wrap.appendChild(ps);
+  var hint = document.createElement('p');
+  hint.className = 'pro-hint';
+  hint.textContent = '参数由当前相机硬件决定，进入取景器后自动列出可用项。';
+  wrap.appendChild(hint);
+  buildProSliders();
+}
+
+/* ---------- 面板 UI ---------- */
+var sliderRefs = {};
+function clearChipActive(){
+  var chips = document.querySelectorAll('#presetWrap .chip');
+  for(var i = 0; i < chips.length; i++){
+    if(chips[i].id !== 'addCustom') chips[i].classList.remove('on');
+  }
+}
+function fmtVal(d, v){
+  if(d.min < 0 && v > 0) return '+' + v;
+  return '' + v;
+}
+function syncSliders(){
+  SLIDERS.forEach(function(d){
+    var v = Math.round(state[d.k] * 100);
+    sliderRefs[d.k].inp.value = String(v);
+    sliderRefs[d.k].val.textContent = fmtVal(d, v);
+  });
+}
+function appendSlider(container, d){
+  var box = document.createElement('div');
+  box.className = 'sl';
+  var h = document.createElement('div');
+  h.className = 'sl-h';
+  var label = document.createElement('span');
+  label.textContent = d.n;
+  var val = document.createElement('b');
+  h.appendChild(label);
+  h.appendChild(val);
+  var inp = document.createElement('input');
+  inp.type = 'range';
+  inp.min = String(Math.round(d.min * 100));
+  inp.max = String(Math.round(d.max * 100));
+  inp.step = '1';
+  inp.value = String(Math.round(state[d.k] * 100));
+  val.textContent = fmtVal(d, Math.round(state[d.k] * 100));
+  inp.addEventListener('input', function(){
+    state[d.k] = Number(inp.value) / 100;
+    val.textContent = fmtVal(d, Number(inp.value));
+    if(d.k !== 'mix'){
+      curPreset = -2;
+      clearChipActive();
+    }
+    if((mode === 'album' && bitmap) || frozen) renderFrame();
+  });
+  box.appendChild(h);
+  box.appendChild(inp);
+  container.appendChild(box);
+  sliderRefs[d.k] = {inp:inp, val:val};
+}
+function buildSliders(){
+  var wrap = $('#sliderWrap');
+  appendSlider(wrap, SLIDERS[0]);   /* 滤镜强度独占一行 */
+  SLIDER_GROUPS.forEach(function(g){
+    var h = document.createElement('div');
+    h.className = 'sec-h';
+    h.textContent = g.name;
+    wrap.appendChild(h);
+    var grid = document.createElement('div');
+    grid.className = 'grid';
+    g.items.forEach(function(k){
+      for(var i = 0; i < SLIDERS.length; i++){
+        if(SLIDERS[i].k === k){ appendSlider(grid, SLIDERS[i]); break; }
+      }
+    });
+    wrap.appendChild(grid);
+  });
+}
+function cssOf(p){
+  function h2(hv){
+    var c = Math.round(Math.max(0, Math.min(255, hv))).toString(16);
+    return c.length < 2 ? '0' + c : c;
+  }
+  var r = 168 * (1 + (p.temperature || 0) * 0.5 + (p.exposure || 0) * 0.25);
+  var g = 150 * (1 - (p.tint || 0) * 0.4 + (p.exposure || 0) * 0.25);
+  var b = 132 * (1 - (p.temperature || 0) * 0.5 + (p.exposure || 0) * 0.25);
+  var sat = 1 + (p.saturation || 0) * 0.6;
+  r = (r - 128) * sat + 128;
+  g = (g - 128) * sat + 128;
+  b = (b - 128) * sat + 128;
+  if(p.bw){ var m = (r + g + b) / 3; r = m; g = m; b = m; }
+  var l = '#' + h2(r) + h2(g) + h2(b);
+  return 'linear-gradient(135deg,' + l + ',#f2f2f2 60%,#555)';
+}
+function persistCustoms(){
+  try{ localStorage.setItem('lk_customs', JSON.stringify(customs)); }catch(e){}
+}
+function nextCustomName(){
+  var mx = 0;
+  customs.forEach(function(c){
+    var m = /^自定\s*(\d+)$/.exec(c.name);
+    if(m){ var v = parseInt(m[1], 10); if(v > mx) mx = v; }
+  });
+  return '自定 ' + (mx + 1);
+}
+function saveCustom(){
+  if(customs.length >= 6){ toast('最多存 6 个自定义预设（长按图标可删）'); return; }
+  var name = nextCustomName();
+  customs.push({name:name, p:JSON.parse(JSON.stringify(state))});
+  persistCustoms();
+  rebuildCustomChips();
+  toast('已保存当前调色为「' + name + '」');
+}
+function rebuildCustomChips(){
+  var wrap = $('#presetWrap');
+  var addBtn = document.getElementById('addCustom');
+  var olds = wrap.querySelectorAll('.chip.custom');
+  for(var i = olds.length - 1; i >= 0; i--) olds[i].remove();
+  var base = PRESETS.length;
+  customs.forEach(function(c, i){
+    var idx = base + i;
+    var btn = document.createElement('button');
+    btn.className = 'chip custom';
+    var sw = document.createElement('span');
+    sw.className = 'sw';
+    sw.style.background = cssOf(c.p);
+    var cn = document.createElement('span');
+    cn.className = 'cn';
+    cn.textContent = c.name;
+    btn.appendChild(sw);
+    btn.appendChild(cn);
+    btn.addEventListener('click', function(){ applyPreset(idx); });
+    btn.addEventListener('contextmenu', function(ev){
+      ev.preventDefault();
+      customs.splice(i, 1);
+      persistCustoms();
+      rebuildCustomChips();
+      toast('已删除 ' + c.name);
+    });
+    if(addBtn) wrap.insertBefore(btn, addBtn);
+    else wrap.appendChild(btn);
+  });
+}
+function buildChips(){
+  var wrap = $('#presetWrap');
+  PRESETS.forEach(function(pr, i){
+    var btn = document.createElement('button');
+    btn.className = 'chip' + (i === 0 ? ' on' : '');
+    var sw = document.createElement('span');
+    sw.className = 'sw';
+    sw.style.background = pr.css;
+    var cn = document.createElement('span');
+    cn.className = 'cn';
+    cn.textContent = pr.name;
+    btn.appendChild(sw);
+    btn.appendChild(cn);
+    btn.addEventListener('click', function(){ applyPreset(i); });
+    wrap.appendChild(btn);
+  });
+  var addBtn = document.createElement('button');
+  addBtn.className = 'chip';
+  addBtn.id = 'addCustom';
+  var sw2 = document.createElement('span');
+  sw2.className = 'sw';
+  sw2.style.cssText = 'display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:20px;border:1px dashed #4a4a56;';
+  sw2.textContent = '+';
+  var cn2 = document.createElement('span');
+  cn2.className = 'cn';
+  cn2.textContent = '存当前';
+  addBtn.appendChild(sw2);
+  addBtn.appendChild(cn2);
+  addBtn.addEventListener('click', saveCustom);
+  wrap.appendChild(addBtn);
+  rebuildCustomChips();
+}
+function applyPreset(i){
+  var base = PRESETS.length;
+  curPreset = i;
+  if(i >= base){
+    var c = customs[i - base];
+    if(!c) return;
+    state = P(c.p);
+  }else{
+    state = P(PRESETS[i].p);
+  }
+  clearChipActive();
+  curScene = '';
+  var sch = document.querySelectorAll('.scene');
+  for(var s2 = 0; s2 < sch.length; s2++) sch[s2].classList.remove('on');
+  var chips = document.querySelectorAll('#presetWrap .chip');
+  if(chips[i]) chips[i].classList.add('on');
+  syncSliders();
+  if((mode === 'album' && bitmap) || frozen) renderFrame();
+}
+function reset(){
+  if(recording){ toast('录制中，请稍候'); return; }
+  applyPreset(curPreset >= 0 && curPreset < PRESETS.length ? curPreset : 0);
+  toast('已重置');
+}
+
+/* ---------- 运镜面板 ---------- */
+function clearMoveSel(){
+  var mc = document.querySelectorAll('.mchip');
+  for(var j = 0; j < mc.length; j++) mc[j].classList.remove('on');
+}
+function setSeq(j){
+  seqIdx = j;
+  clearMoveSel();
+  var mc = document.querySelectorAll('.mchip.schip');
+  if(mc[j]) mc[j].classList.add('on');
+  var sq = SEQS[j];
+  if(sq.filter != null && sq.filter !== curPreset) applyPreset(sq.filter);
+  moveStart = performance.now();
+  updateMoveBadge();
+  updateMoveHint();
+  if(mode === 'album' && bitmap && !recording) renderFrame();
+  toast('已套用「' + sq.name + '」：' + sq.dur + 's · 滤镜+运镜已配好，滤镜页「AI 自动」可按画面微调');
+}
+function setMove(i){
+  curMove = i;
+  seqIdx = -1;
+  if(i > 0) moveStart = performance.now();
+  clearMoveSel();
+  var mc = document.querySelectorAll('.mchip:not(.schip)');
+  if(mc[i]) mc[i].classList.add('on');
+  updateMoveBadge();
+  updateMoveHint();
+  if(mode === 'album' && bitmap && !recording) renderFrame();
+}
+function updateMoveBadge(){
+  var b = $('#moveBadge');
+  var show = (curMove > 0 || seqIdx >= 0) && !frozen && !inState('landing') && (!recording || plainRec);
+  if(show){
+    if(seqIdx >= 0){
+      var sq = SEQS[seqIdx];
+      b.textContent = plainRec
+        ? '视频 · ' + sq.name + ' · ' + sq.dur + 's'
+        : '一键出片 · ' + sq.name + ' · ' + sq.dur + 's';
+    }else{
+      b.textContent = plainRec
+        ? '视频 · ' + MOVES[curMove].name + ' · ' + moveDur + 's 往返'
+        : '运镜 · ' + MOVES[curMove].name + ' · ' + moveDur + 's';
+    }
+    b.style.display = 'block';
+  }else{
+    b.style.display = 'none';
+  }
+}
+function updateMoveHint(){
+  var h = $('#moveHint');
+  if(!h) return;
+  if(seqIdx >= 0){
+    var sq = SEQS[seqIdx];
+    h.textContent = '一键模板「' + sq.name + '」' + sq.dur + 's：滤镜和运镜已配好，点下方按钮直接出片';
+    return;
+  }
+  if(frozen) h.textContent = '当前是冻结照片：重拍或换一张后即可录制运镜';
+  else if(mode === 'live') h.textContent = '取景中：点下方按钮，按当前模板录制一段运镜视频';
+  else if(bitmap) h.textContent = '点击下方按钮，把当前照片按模板生成 ' + moveDur + ' 秒运镜视频';
+  else h.textContent = '先从相册选一张照片，再生成运镜视频';
+}
+function buildMoves(){
+  var wrap = $('#moveWrap');
+  var h0 = document.createElement('div');
+  h0.className = 'sec-h';
+  h0.textContent = '一键出片 · 滤镜+运镜已配好';
+  wrap.appendChild(h0);
+  var sstrip = document.createElement('div');
+  sstrip.className = 'move-strip';
+  SEQS.forEach(function(sq, j){
+    var b = document.createElement('button');
+    b.className = 'mchip schip';
+    b.textContent = sq.name + ' ' + sq.dur + 's';
+    b.addEventListener('click', function(){
+      if(recording){ toast('录制中，请稍候'); return; }
+      setSeq(j);
+    });
+    sstrip.appendChild(b);
+  });
+  wrap.appendChild(sstrip);
+  var h1 = document.createElement('div');
+  h1.className = 'sec-h';
+  h1.style.marginTop = '10px';
+  h1.textContent = '单个运镜';
+  wrap.appendChild(h1);
+  var strip = document.createElement('div');
+  strip.className = 'move-strip';
+  MOVES.forEach(function(m, i){
+    var b = document.createElement('button');
+    b.className = 'mchip' + (i === 0 ? ' on' : '');
+    b.textContent = m.name;
+    b.addEventListener('click', function(){
+      if(recording){ toast('录制中，请稍候'); return; }
+      setMove(i);
+    });
+    strip.appendChild(b);
+  });
+  wrap.appendChild(strip);
+  var row = document.createElement('div');
+  row.className = 'move-row';
+  var lbl = document.createElement('span');
+  lbl.className = 'lbl';
+  lbl.textContent = '时长';
+  row.appendChild(lbl);
+  DURS.forEach(function(dsec){
+    var d = document.createElement('button');
+    d.className = 'dchip' + (dsec === moveDur ? ' on' : '');
+    d.textContent = dsec + 's';
+    d.addEventListener('click', function(){
+      if(recording){ toast('录制中，请稍候'); return; }
+      moveDur = dsec;
+      var dc = document.querySelectorAll('.dchip');
+      for(var j = 0; j < dc.length; j++) dc[j].classList.toggle('on', dc[j].textContent === dsec + 's');
+      moveStart = performance.now();
+      updateMoveBadge();
+      updateMoveHint();
+      if(mode === 'album' && bitmap) renderFrame();
+    });
+    row.appendChild(d);
+  });
+  wrap.appendChild(row);
+  var hint = document.createElement('div');
+  hint.className = 'move-hint';
+  hint.id = 'moveHint';
+  wrap.appendChild(hint);
+  var act = document.createElement('button');
+  act.className = 'move-act';
+  act.id = 'moveAct';
+  act.textContent = '生成运镜视频';
+  act.addEventListener('click', function(){
+    if(recording){
+      if(plainRec){ toast('录像中：按快门键停止'); return; }
+      finishRecording();
+      return;
+    }
+    if(frozen){ toast('请先重拍或换一张照片'); return; }
+    startRecording();
+  });
+  wrap.appendChild(act);
+  updateMoveHint();
+}
+
+/* ---------- 对比 ---------- */
+function cmpStart(){
+  if(recording) return;
+  if(mixBak === null){
+    mixBak = state.mix;
+    state.mix = 0;
+    sliderRefs.mix.val.textContent = '0';
+    if((mode === 'album' && bitmap) || frozen) renderFrame();
+  }
+}
+function cmpEnd(){
+  if(mixBak !== null){
+    state.mix = mixBak;
+    mixBak = null;
+    sliderRefs.mix.val.textContent = fmtVal(SLIDERS[0], Math.round(state.mix * 100));
+    if((mode === 'album' && bitmap) || frozen) renderFrame();
+  }
+}
+
+/* ---------- 选项卡 ---------- */
+function switchTab(which){
+  var tabs = [
+    ['tabPreset','presetWrap','flex'],
+    ['tabSlider','sliderWrap','block'],
+    ['tabMove','moveWrap','block'],
+    ['tabPro','proWrap','block']
+  ];
+  var key = {preset:'tabPreset', slider:'tabSlider', move:'tabMove', pro:'tabPro'}[which];
+  for(var i = 0; i < tabs.length; i++){
+    var on = tabs[i][0] === key;
+    document.getElementById(tabs[i][0]).classList.toggle('on', on);
+    document.getElementById(tabs[i][1]).style.display = on ? tabs[i][2] : 'none';
+  }
+  document.getElementById('sceneStrip').style.display = (which === 'preset') ? 'flex' : 'none';
+  if(which === 'move') updateMoveHint();
+  if(which === 'pro') buildProSliders();
+}
+
+/* ---------- 事件绑定 ---------- */
+function bind(){
+  $('#btnCam').addEventListener('click', startLive);
+  $('#btnAlbum').addEventListener('click', openPicker);
+  $('#homeBtn').addEventListener('click', function(){
+    if(recording){ toast('录制中，请稍候'); return; }
+    cancelCountdown();
+    stopMic();
+    stopStream();
+    leOn = false;
+    if(tl.on){ tl.on = false; tl.blobs = []; }
+    updateToolBarText();
+    setState('landing');
+  });
+  fileInput.addEventListener('change', function(){
+    if(fileInput.files && fileInput.files[0]) loadFile(fileInput.files[0]);
+    fileInput.value = '';
+  });
+  fileInput.addEventListener('cancel', function(){
+    if(inState('live') && !stream && mode === 'live') startLive();
+  });
+  $('#tabPreset').addEventListener('click', function(){ switchTab('preset'); });
+  $('#tabSlider').addEventListener('click', function(){ switchTab('slider'); });
+  $('#tabMove').addEventListener('click', function(){ switchTab('move'); });
+  $('#tabPro').addEventListener('click', function(){ switchTab('pro'); });
+  $('#toAlbum').addEventListener('click', function(){ if(!recording) openPicker(); });
+  $('#pick').addEventListener('click', function(){ if(!recording) openPicker(); });
+  $('#shutter').addEventListener('click', shutter);
+  $('#retake').addEventListener('click', retake);
+  $('#flip').addEventListener('click', flipCam);
+  $('#segPhoto').addEventListener('click', function(){ setCamMode('photo'); });
+  $('#segVideo').addEventListener('click', function(){ setCamMode('video'); });
+  var saves = document.querySelectorAll('.save');
+  for(var i = 0; i < saves.length; i++) saves[i].addEventListener('click', save);
+  var resets = document.querySelectorAll('.reset');
+  for(var j = 0; j < resets.length; j++) resets[j].addEventListener('click', reset);
+  var cmps = document.querySelectorAll('.compare');
+  for(var k = 0; k < cmps.length; k++){
+    cmps[k].addEventListener('pointerdown', cmpStart);
+    cmps[k].addEventListener('pointerup', cmpEnd);
+    cmps[k].addEventListener('pointercancel', cmpEnd);
+    cmps[k].addEventListener('pointerleave', cmpEnd);
+  }
+}
+
+/* ---------- 渲染循环 ---------- */
+function loop(){
+  requestAnimationFrame(loop);
+  if(!gl || !prog) return;
+  var animating = ((curMove > 0 || seqIdx >= 0) && !frozen) || recording;
+  if(mode === 'live' && !frozen && stream && video.readyState >= 2){
+    if(video.videoWidth) setCanvasFor(video);
+    updateTexture(video);
+    frameN++;
+    renderFrame();
+    if(tl.on) captureTlFrame();
+  }else if(animating && mode === 'album' && bitmap){
+    renderFrame();
+  }
+  if(recording && !plainRec){
+    updateProgress();
+    var e = (performance.now() - moveStart) / (recDur * 1000);
+    if(e >= 1) finishRecording();
+  }
+  if(compOn) updateComp();
+}
+
+/* ---------- 上下文恢复 ---------- */
+function bindCtx(){
+  if(!canvas) return;
+  canvas.addEventListener('webglcontextlost', function(e){
+    e.preventDefault();
+    prog = null;
+  });
+  canvas.addEventListener('webglcontextrestored', function(){
+    bootGL();
+    if(mode === 'live' && !frozen && stream) return; /* 视频源由循环重传 */
+    var src = frozen ? captured : bitmap;
+    if(src){
+      setCanvasFor(src);
+      updateTexture(src);
+      renderFrame();
+    }
+  });
+}
+
+/* ---------- 启动 ---------- */
+bootGL();
+if(!gl){
+  $('#landing').innerHTML = '<p style="color:#ccc;padding:32px;text-align:center;line-height:2">此浏览器不支持 WebGL，无法运行调色引擎。<br>请用 Chrome / Edge 或系统默认浏览器打开。</p>';
+}else{
+  buildChips();
+  buildScenes();
+  buildSliders();
+  buildMoves();
+  buildPro();
+  buildToolBar();
+}
+if(window.AndroidBridge && window.AndroidBridge.isApp){
+  var lf = document.querySelector('#landing .foot');
+  if(lf) lf.textContent = '纯本地处理 · 照片不上传';
+}
+bind();
+bindCtx();
+setState('landing');
+loop();
+</script>
+</body>
+</html>

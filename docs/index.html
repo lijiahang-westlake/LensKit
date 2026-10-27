@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0f">
+<title>镜头调色 LensKit · 下载</title>
+<style>
+:root{--bg:#0b0b0f;--panel:#141419;--line:#26262e;--txt:#e8e8ec;--dim:#9a9aa4;--acc:#f0a03c;}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--txt);
+  font-family:-apple-system,"HarmonyOS Sans SC","MiSans","PingFang SC","Microsoft YaHei",Roboto,sans-serif;
+  display:flex;justify-content:center;min-height:100vh;}
+.card{max-width:440px;width:100%;padding:36px 24px calc(40px + env(safe-area-inset-bottom));}
+h1{font-size:26px;letter-spacing:6px;margin:8px 0 4px;}
+.sub{color:var(--dim);font-size:13px;line-height:1.8;margin:0 0 22px;}
+a.btn{display:block;text-align:center;text-decoration:none;border-radius:999px;padding:14px 0;
+  font-size:15px;margin:10px 0;}
+a.primary{background:var(--acc);color:#17120a;font-weight:600;}
+a.ghost{border:1px solid #3a3a44;color:var(--txt);}
+h2{font-size:14px;margin:26px 0 8px;letter-spacing:1px;color:#c8c8d0;}
+ol{margin:0;padding-left:20px;color:var(--dim);font-size:13px;line-height:2;}
+ul{margin:0;padding-left:20px;color:var(--dim);font-size:13px;line-height:1.9;}
+li b{color:var(--txt);font-weight:600;}
+.tag{display:inline-block;padding:4px 12px;border-radius:999px;border:1px solid #3a3226;
+  color:var(--acc);font-size:12px;margin-bottom:14px;}
+.priv{margin-top:26px;padding:14px;border:1px solid var(--line);border-radius:12px;
+  color:var(--dim);font-size:12px;line-height:1.9;}
+.note{color:#6b6b74;font-size:12px;line-height:1.8;margin:8px 0 0;}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0;}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#a8a8b4;}
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="tag">v1.7 · 53KB</span>
+  <h1>镜头调色</h1>
+  <p class="sub">实时滤镜取景 + 运镜录影 + 一键出片模板<br>适配小米 17 Max / 全系 Android（10.0+）</p>
+
+  <a class="btn primary" href="LensKit.apk" download>下载 Android 版（APK）</a>
+  <a class="btn ghost" href="app.html">直接打开网页版（免安装）</a>
+
+  <h2>安装步骤</h2>
+  <ol>
+    <li>手机浏览器打开本页，点「下载 Android 版」</li>
+    <li>下载完成后点开 APK，系统提示「未知应用」时选择允许</li>
+    <li>首次打开会请求<b>相机</b>权限（用到收音时再请求麦克风），同意即可取景</li>
+  </ol>
+  <p class="note">安装时若出现「有风险」提示，是因为 APK 为自签名发布（未上架商店），确认来源后点「仍要安装」即可。</p>
+
+  <h2>功能</h2>
+  <ul>
+    <li><b>调色</b>：10 款预设 + 十余项手动调节 + 自定义预设（磨皮 / 颗粒 / 暗角 / 胶片感…）</li>
+    <li><b>一键出片</b>：6 个「滤镜 + 多段运镜」组合模板，选一个直接录成片</li>
+    <li><b>运镜</b>：15 个模板（推近 / 环绕 / 甩镜 / 希区柯克变焦 / 手持感…），3–15 秒可调</li>
+    <li><b>视频</b>：照片 / 视频双模式，运镜往返循环，可收音，最长 5 分钟</li>
+    <li><b>构图提示</b>：主体位置、三分交点、地平线倾角 + 构图评分</li>
+    <li><b>AI 场景</b>：本地识别夜景 / 美食 / 人像 / 风景 / 逆光 / 雪景，并按画面微调模板</li>
+    <li><b>进阶</b>：光轨长曝光、延时摄影、专业参数（ISO / 色温 / 对焦…）、连拍、定时、网格、水平仪、画幅比例、日期水印</li>
+  </ul>
+
+  <div class="priv">
+    隐私说明：App 不含任何网络统计/上报代码，唯一网络权限仅用于本机内部通信（127.0.0.1），照片和视频不会离开手机。
+  </div>
+
+  <hr>
+  <p class="note">开源 · MIT License · 源码见仓库根目录 <code>lenskit/index.html</code></p>
+</div>
+</body>
+</html>
