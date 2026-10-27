@@ -5,6 +5,8 @@
 一个单文件 WebGL 相机应用：一套代码同时跑在浏览器和 Android APK 里。
 实时滤镜取景、一键出片运镜模板、光轨长曝光、延时摄影、专业参数、AI 场景识别与构图提示。
 
+**[📱 手机安装页](https://lijiahang-westlake.github.io/LensKit/)** · **[🌐 网页版直接试用](https://lijiahang-westlake.github.io/LensKit/app.html)** · **[⬇ 下载 APK](https://github.com/lijiahang-westlake/LensKit/releases/latest)**
+
 [![HTML](https://img.shields.io/badge/HTML-single--file-e34f26?style=flat-square)](#)
 [![WebGL](https://img.shields.io/badge/WebGL-GLSL%20ES%201.0-5586a4?style=flat-square)](#)
 [![Android](https://img.shields.io/badge/Android-10%2B%20%C2%B7%2053KB-3ddc84?style=flat-square)](#)
@@ -16,8 +18,8 @@
 
 | 方式 | 说明 |
 |---|---|
-| **网页版** | 直接打开 [`lenskit/index.html`](lenskit/index.html)（需 `https://` 或 `localhost` 才能调用摄像头） |
-| **在线安装** | 打开 GitHub Pages 站点 → 下载 APK → 手机上点开安装 |
+| **手机安装** | 打开 [在线安装页](https://lijiahang-westlake.github.io/LensKit/) → 下载 APK → 手机上点开安装（无需电脑） |
+| **网页版** | [在线试用](https://lijiahang-westlake.github.io/LensKit/app.html)，或本地打开 [`lenskit/index.html`](lenskit/index.html)（需 `https://` 或 `localhost` 才能调用摄像头） |
 | **自行构建** | 见下方[构建](#构建-apk) |
 
 Android 端最低 **10.0（API 29）**，已在 Xiaomi 17 Max 上验证，主流安卓机型通用。
